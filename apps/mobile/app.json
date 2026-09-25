@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.sitemate.personal"
+      "bundleIdentifier": "app.sitemate.personal",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
     },
     "android": {
       "package": "app.sitemate.personal",
@@ -30,7 +35,15 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "SiteMate records your meetings (with everyone’s consent) to write notes.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": true
+        }
+      ]
     ]
   }
 }
