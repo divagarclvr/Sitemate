@@ -1,9 +1,10 @@
 import { z } from "zod";
 
-const csv = z
-  .string()
-  .default("")
-  .transform((s) => s.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
+const csv = (fallback = "") =>
+  z
+    .string()
+    .default(fallback)
+    .transform((s) => s.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -19,13 +20,14 @@ const EnvSchema = z.object({
   SUPABASE_URL: z.url({ error: "missing or wrong — should look like https://xxxx.supabase.co" }),
   // Legacy HS256 secret. Leave empty to verify tokens with Supabase's public JWKS keys instead.
   SUPABASE_JWT_SECRET: z.string().optional().default(""),
-  ALLOWED_EMAILS: csv,
+  ALLOWED_EMAILS: csv(),
 
   // AI
   AI_PROVIDER: z.enum(["gemini"]).default("gemini"),
   GEMINI_API_KEY: z.string().default(""),
-  GEMINI_MODEL: z.string().default("gemini-3.5-flash"),
-  GEMINI_MODEL_LITE: z.string().default("gemini-3.5-flash-lite"),
+  // Comma-separated lists, tried in order when a model is busy or its free limit is used up.
+  GEMINI_MODEL: csv("gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite"),
+  GEMINI_MODEL_LITE: csv("gemini-3.5-flash-lite,gemini-3.6-flash"),
   AI_FALLBACK_PROVIDER: z.enum(["groq", "none"]).default("groq"),
   GROQ_API_KEY: z.string().default(""),
   GROQ_LLM_MODEL: z.string().default("openai/gpt-oss-120b"),

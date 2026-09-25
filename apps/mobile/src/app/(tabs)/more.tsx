@@ -6,6 +6,15 @@ import { useAuth } from "@/lib/auth";
 import { config } from "@/lib/config";
 import { supabase } from "@/lib/supabase";
 
+function failureHint(error: string | null) {
+  const e = (error ?? "").toLowerCase();
+  if (e.includes("busy") || e.includes("high demand")) {
+    return "Google's free servers are busy right now — not a problem with your key. SiteMate uses the backup AI meanwhile; try again later.";
+  }
+  if (e.includes("limit")) return "Today's free limit is used up. It resets automatically; the backup AI is used meanwhile.";
+  return "Check this provider's API key and model name in the server settings.";
+}
+
 function ProviderResult({ label, check }: { label: string; check: ProviderCheck }) {
   return (
     <Card>
@@ -14,7 +23,7 @@ function ProviderResult({ label, check }: { label: string; check: ProviderCheck 
       </Body>
       {check.reply ? <Body>{check.reply}</Body> : null}
       {check.error ? <Body muted>{check.error}</Body> : null}
-      {!check.ok && <Body muted>Check this provider's API key and model name in the server settings.</Body>}
+      {!check.ok && <Body muted>{failureHint(check.error)}</Body>}
       <Body muted>
         {(check.latency_ms / 1000).toFixed(1)} s
         {check.input_tokens != null ? ` · ${check.input_tokens} in / ${check.output_tokens} out tokens` : ""}

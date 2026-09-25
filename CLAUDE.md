@@ -100,8 +100,8 @@ Language settings (Settings → Languages):
 
 | Role | Provider / model (env) | Free limit (check in AI Studio / Groq console) |
 |---|---|---|
-| Main: notes, images, PDFs, day plans, chat + tools | **Gemini** `GEMINI_MODEL=gemini-3.5-flash` | Per-model RPM / RPD shown in AI Studio |
-| Light jobs: transcript clean-up, contact matching | **Gemini** `GEMINI_MODEL_LITE=gemini-3.5-flash-lite` | Higher daily limit than Flash |
+| Main: notes, images, PDFs, day plans, chat + tools | **Gemini** `GEMINI_MODEL=gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite` (tried in order) | Per-model RPM / RPD shown in AI Studio |
+| Light jobs: transcript clean-up, contact matching | **Gemini** `GEMINI_MODEL_LITE=gemini-3.5-flash-lite,gemini-3.6-flash` | Higher daily limit than Flash |
 | Fallback when Gemini quota is used up | **Groq** `GROQ_LLM_MODEL=openai/gpt-oss-120b` | 1K requests/day, 8K tokens/min — short jobs only |
 | Speech-to-text | **Groq** `whisper-large-v3` | 28,800 audio-seconds/day (= 8 hours/day) |
 
@@ -113,6 +113,8 @@ and responses to improve its products, and human reviewers may read them. Vendor
 negotiations and project figures sent for summarising fall under this. Groq states it does
 not train on API data. If this becomes a concern later, switch `AI_PROVIDER` to a paid
 Gemini tier or Claude — nothing else changes.
+
+Free Gemini models are often overloaded (HTTP 503): measured 2026-09-25, 3.7/3.8-flash failed 3/3, 3.5-flash 2/3, 3.6-flash 1/3, 3.5-flash-lite 0/3. Hence model lists (quotas are per model too) and no SDK retries.
 
 Quota handling: every AI call goes through `aiQuota` → on a 429 it tries the fallback;
 if both are exhausted the job is re-queued for when the quota resets and the note shows
@@ -487,8 +489,8 @@ ALLOWED_EMAILS=you@example.com
 # AI (free)
 AI_PROVIDER=gemini                       # gemini | anthropic (later)
 GEMINI_API_KEY=                          # from aistudio.google.com
-GEMINI_MODEL=gemini-3.5-flash
-GEMINI_MODEL_LITE=gemini-3.5-flash-lite
+GEMINI_MODEL=gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite   # tried in order
+GEMINI_MODEL_LITE=gemini-3.5-flash-lite,gemini-3.6-flash
 AI_FALLBACK_PROVIDER=groq
 GROQ_LLM_MODEL=openai/gpt-oss-120b
 # Optional, only if you switch to Claude later:
