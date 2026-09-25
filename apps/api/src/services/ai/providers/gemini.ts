@@ -1,5 +1,6 @@
 import { ApiError, GoogleGenAI, type Content } from "@google/genai";
 import {
+  ProviderUnavailableError,
   QuotaExceededError,
   type GenerateOptions,
   type LlmMessage,
@@ -16,7 +17,12 @@ export class GeminiProvider implements LlmProvider {
     private mainModel: string,
     private liteModel: string,
   ) {
-    this.client = new GoogleGenAI({ apiKey });
+    this.client = new GoogleGenAI({
+      apiKey,
+      // Fail fast when Google is overloaded so the backup AI takes over at once,
+      // instead of the SDK default of 5 attempts with up to 60 s waits between them.
+      httpOptions: { timeout: 90_000, retryOptions: { attempts: 1 } },
+    });
   }
 
   modelFor(tier: GenerateOptions["tier"] = "main") {
@@ -58,7 +64,15 @@ export class GeminiProvider implements LlmProvider {
       if (err instanceof ApiError && err.status === 429) {
         throw new QuotaExceededError(this.name, `Gemini free-tier limit reached for ${model}`);
       }
+      if ((err instanceof ApiError && err.status >= 500) || isTimeout(err)) {
+        throw new ProviderUnavailableError(this.name, `Gemini is busy or not responding (${model})`);
+      }
       throw err;
     }
   }
+}
+
+function isTimeout(err: unknown) {
+  const name = (err as { name?: string } | null)?.name ?? "";
+  return name === "AbortError" || name === "TimeoutError";
 }

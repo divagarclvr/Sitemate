@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FallbackProvider } from "../src/services/ai/fallback";
-import { QuotaExceededError, UnsupportedInputError } from "../src/services/ai/types";
+import { ProviderUnavailableError, QuotaExceededError, UnsupportedInputError } from "../src/services/ai/types";
 import { ScriptedProvider, userMsg } from "./helpers";
 
 describe("FallbackProvider", () => {
@@ -14,6 +14,13 @@ describe("FallbackProvider", () => {
 
   it("switches to the fallback when the free quota is used up", async () => {
     const main = new ScriptedProvider("gemini", [new QuotaExceededError("gemini", "429")]);
+    const fb = new ScriptedProvider("groq", ["fallback"]);
+    const r = await new FallbackProvider(main, fb).generate(userMsg("hi"));
+    expect(r.provider).toBe("groq");
+  });
+
+  it("switches to the fallback when the main AI is overloaded (503)", async () => {
+    const main = new ScriptedProvider("gemini", [new ProviderUnavailableError("gemini", "503 high demand")]);
     const fb = new ScriptedProvider("groq", ["fallback"]);
     const r = await new FallbackProvider(main, fb).generate(userMsg("hi"));
     expect(r.provider).toBe("groq");

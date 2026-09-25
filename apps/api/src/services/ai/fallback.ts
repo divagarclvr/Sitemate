@@ -1,5 +1,5 @@
 import {
-  QuotaExceededError,
+  ProviderUnavailableError,
   UnsupportedInputError,
   type GenerateOptions,
   type LlmMessage,
@@ -7,7 +7,7 @@ import {
   type LlmResult,
 } from "./types";
 
-/** Uses `main`; if its free quota is used up, tries `fallback`. */
+/** Uses `main`; if its free quota is used up or it is overloaded, tries `fallback`. */
 export class FallbackProvider implements LlmProvider {
   readonly name: string;
 
@@ -26,11 +26,11 @@ export class FallbackProvider implements LlmProvider {
     try {
       return await this.main.generate(messages, opts);
     } catch (err) {
-      if (!(err instanceof QuotaExceededError) || !this.fallback) throw err;
+      if (!(err instanceof ProviderUnavailableError) || !this.fallback) throw err;
       try {
         return await this.fallback.generate(messages, opts);
       } catch (fbErr) {
-        // Images/PDFs can't go to a text-only fallback: report the original quota problem.
+        // Images/PDFs can't go to a text-only fallback: report the original problem.
         if (fbErr instanceof UnsupportedInputError) throw err;
         throw fbErr;
       }

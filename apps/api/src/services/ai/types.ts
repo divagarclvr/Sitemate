@@ -32,8 +32,8 @@ export interface LlmProvider {
   generate(messages: LlmMessage[], opts?: GenerateOptions): Promise<LlmResult>;
 }
 
-/** Thrown when a free-tier limit is hit (HTTP 429). Callers may fall back or re-queue. */
-export class QuotaExceededError extends Error {
+/** A temporary problem on the provider's side. Callers may fall back or re-queue. */
+export class ProviderUnavailableError extends Error {
   constructor(
     public provider: string,
     message: string,
@@ -41,6 +41,9 @@ export class QuotaExceededError extends Error {
     super(message);
   }
 }
+
+/** Thrown when a free-tier limit is hit (HTTP 429). */
+export class QuotaExceededError extends ProviderUnavailableError {}
 
 /** Thrown when a provider can't handle the input at all (e.g. images on a text-only model). */
 export class UnsupportedInputError extends Error {}

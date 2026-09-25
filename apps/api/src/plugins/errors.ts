@@ -1,7 +1,7 @@
 import type { FastifyError, FastifyInstance } from "fastify";
 import type { ApiError } from "@sitemate/shared";
 import { AppError } from "../errors";
-import { QuotaExceededError } from "../services/ai/types";
+import { ProviderUnavailableError, QuotaExceededError } from "../services/ai/types";
 
 /** Turns every error into `{ error: { code, message, hint } }` without leaking internals. */
 export function registerErrorHandler(app: FastifyInstance) {
@@ -25,6 +25,15 @@ export function registerErrorHandler(app: FastifyInstance) {
           code: "AI_QUOTA",
           message: "Today's free AI limit has been reached.",
           hint: "It resets automatically (Gemini resets at midnight US time, about 12:30–1:30 PM IST). Your work is saved and will continue then.",
+        },
+      };
+    } else if (err instanceof ProviderUnavailableError) {
+      status = 503;
+      body = {
+        error: {
+          code: "AI_BUSY",
+          message: "The free AI service is busy right now.",
+          hint: "This is usually temporary. Your work is saved — try again in a few minutes.",
         },
       };
     } else if ("validation" in err && err.validation) {
