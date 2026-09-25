@@ -1,0 +1,47 @@
+import { z } from "zod";
+
+const csv = z
+  .string()
+  .default("")
+  .transform((s) => s.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
+
+const EnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  PORT: z.coerce.number().default(8080),
+  HOST: z.string().default("0.0.0.0"),
+  PUBLIC_BASE_URL: z.string().default("http://localhost:8080"),
+  TZ_DEFAULT: z.string().default("Asia/Kolkata"),
+
+  // Database / Supabase
+  DATABASE_URL: z
+    .string({ error: "missing — copy it from Supabase → Connect → Transaction pooler" })
+    .min(1, "missing — copy it from Supabase → Connect → Transaction pooler"),
+  SUPABASE_URL: z.url({ error: "missing or wrong — should look like https://xxxx.supabase.co" }),
+  // Legacy HS256 secret. Leave empty to verify tokens with Supabase's public JWKS keys instead.
+  SUPABASE_JWT_SECRET: z.string().optional().default(""),
+  ALLOWED_EMAILS: csv,
+
+  // AI
+  AI_PROVIDER: z.enum(["gemini"]).default("gemini"),
+  GEMINI_API_KEY: z.string().default(""),
+  GEMINI_MODEL: z.string().default("gemini-3.5-flash"),
+  GEMINI_MODEL_LITE: z.string().default("gemini-3.5-flash-lite"),
+  AI_FALLBACK_PROVIDER: z.enum(["groq", "none"]).default("groq"),
+  GROQ_API_KEY: z.string().default(""),
+  GROQ_LLM_MODEL: z.string().default("openai/gpt-oss-120b"),
+
+  // Limits
+  RATE_LIMIT_PER_MIN: z.coerce.number().default(60),
+});
+
+export type Env = z.infer<typeof EnvSchema>;
+
+/** Parses process.env once; prints every missing/invalid variable in plain words. */
+export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
+  const parsed = EnvSchema.safeParse(source);
+  if (!parsed.success) {
+    const lines = parsed.error.issues.map((i) => `  • ${i.path.join(".")}: ${i.message}`);
+    throw new Error(`Your apps/api/.env file has problems:\n${lines.join("\n")}`);
+  }
+  return parsed.data;
+}

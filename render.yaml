@@ -1,0 +1,39 @@
+# Render "Blueprint": lets Render set up the SiteMate server for you (free plan).
+# Render → New → Blueprint → pick your GitHub repo. Secrets are typed into Render's dashboard, never here.
+services:
+  - type: web
+    name: sitemate-api
+    runtime: node
+    plan: free
+    region: singapore # closest free region to Bengaluru
+    buildCommand: npm ci --include=dev --workspace=@sitemate/api --workspace=@sitemate/shared && npm run build -w @sitemate/api
+    startCommand: npm run start -w @sitemate/api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: TZ_DEFAULT
+        value: Asia/Kolkata
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: GEMINI_MODEL_LITE
+        value: gemini-3.5-flash-lite
+      - key: AI_FALLBACK_PROVIDER
+        value: groq
+      - key: GROQ_LLM_MODEL
+        value: openai/gpt-oss-120b
+      # You type these in the Render dashboard when asked:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: ALLOWED_EMAILS
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

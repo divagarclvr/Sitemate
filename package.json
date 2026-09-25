@@ -1,0 +1,22 @@
+{
+  "name": "sitemate",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "api": "npm run dev -w @sitemate/api",
+    "mobile": "npm run start -w @sitemate/mobile",
+    "test": "npm run test -w @sitemate/api",
+    "typecheck": "npm run typecheck -w @sitemate/shared && npm run typecheck -w @sitemate/api"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  }
+}
