@@ -20,7 +20,25 @@ const EnvSchema = z.object({
   SUPABASE_URL: z.url({ error: "missing or wrong — should look like https://xxxx.supabase.co" }),
   // Legacy HS256 secret. Leave empty to verify tokens with Supabase's public JWKS keys instead.
   SUPABASE_JWT_SECRET: z.string().optional().default(""),
+  // Server-only key for file storage (Supabase → Project Settings → API Keys → Secret keys).
+  SUPABASE_SECRET_KEY: z
+    .string({ error: "missing — copy it from Supabase → Project Settings → API Keys → Secret keys" })
+    .min(1, "missing — copy it from Supabase → Project Settings → API Keys → Secret keys"),
+  STORAGE_BUCKET: z.string().default("sitemate-private"),
   ALLOWED_EMAILS: csv(),
+
+  // Speech-to-text (Groq free tier)
+  STT_MODEL: z.string().default("whisper-large-v3"),
+  /** Groq's free tier accepts files up to 25 MB; larger recordings are split with ffmpeg. */
+  STT_MAX_MB: z.coerce.number().default(24),
+  STT_CHUNK_SECONDS: z.coerce.number().default(1200),
+
+  // Background worker
+  WORKER_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  WORKER_POLL_MS: z.coerce.number().default(5000),
 
   // AI
   AI_PROVIDER: z.enum(["gemini"]).default("gemini"),

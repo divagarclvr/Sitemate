@@ -9,16 +9,22 @@ import { registerErrorHandler } from "./plugins/errors";
 import { diagnosticsRoutes } from "./routes/diagnostics";
 import { healthRoutes } from "./routes/health";
 import { meRoutes } from "./routes/me";
+import { notesRoutes } from "./routes/notes";
+import { projectsRoutes } from "./routes/projects";
 import type { AiProviders } from "./services/ai";
+import type { FileStorage } from "./services/storage";
 
 export interface AppDeps {
   env: Env;
   db: Sql;
   ai: AiProviders;
+  storage: FileStorage;
   verifyToken: TokenVerifier;
+  /** Wakes the background worker when a job is queued. */
+  kickWorker?: () => void;
 }
 
-export async function buildApp({ env, db, ai, verifyToken }: AppDeps) {
+export async function buildApp({ env, db, ai, storage, verifyToken, kickWorker = () => {} }: AppDeps) {
   const app = Fastify({
     logger: env.NODE_ENV === "test" ? false : { level: "info", redact: ["req.headers.authorization"] },
     bodyLimit: 1024 * 1024,
@@ -35,6 +41,8 @@ export async function buildApp({ env, db, ai, verifyToken }: AppDeps) {
   await app.register(healthRoutes);
   await app.register(meRoutes(db));
   await app.register(diagnosticsRoutes(ai));
+  await app.register(projectsRoutes(db));
+  await app.register(notesRoutes({ db, storage, kickWorker }));
 
   return app;
 }

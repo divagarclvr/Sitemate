@@ -5,6 +5,8 @@ export const testEnv = loadEnv({
   NODE_ENV: "test",
   DATABASE_URL: "postgres://unused",
   SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SECRET_KEY: "test",
+  WORKER_ENABLED: "false",
   ALLOWED_EMAILS: "Owner@Example.com",
   GEMINI_API_KEY: "test",
 });
