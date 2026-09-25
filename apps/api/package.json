@@ -8,7 +8,9 @@
     "build": "tsup",
     "start": "node dist/server.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
+    "check:ai": "tsx --env-file=.env src/scripts/check-ai.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
