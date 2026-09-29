@@ -27,6 +27,7 @@ for (const col of [
   "file_name text",
   "mime text",
   "related_note_id text",
+  "contact_id text",
 ]) {
   try {
     localDb.execSync(`alter table pending_uploads add column ${col}`);

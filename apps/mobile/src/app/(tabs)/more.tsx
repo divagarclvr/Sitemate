@@ -1,5 +1,7 @@
+import { CONTACTS_ROUTE } from "@/lib/calls";
 import type { AiDiagnostics, ProviderCheck } from "@sitemate/shared";
 import { useMutation } from "@tanstack/react-query";
+import { router } from "expo-router";
 import { BigButton, Body, Card, ErrorBox, Screen, Title } from "@/components/ui";
 import { hasOwnRecordingService } from "@/audio/foregroundService";
 import { api, ApiRequestError } from "@/lib/api";
@@ -58,6 +60,8 @@ export default function MoreScreen() {
         </Body>
       </Card>
 
+      <BigButton label="👥 Contacts — call & call notes" onPress={() => router.push(CONTACTS_ROUTE)} />
+
       <Title>Connection check</Title>
       <BigButton label="Check server" variant="secondary" onPress={() => health.mutate()} loading={health.isPending} />
       {health.data && <Body>✅ Server is running ({new Date(health.data.time).toLocaleTimeString()})</Body>}
@@ -69,7 +73,7 @@ export default function MoreScreen() {
       {aiTest.data?.fallback && <ProviderResult label="Backup AI" check={aiTest.data.fallback} />}
       {aiTest.error && showError(aiTest.error)}
 
-      <Body muted>Contacts, Projects, Settings and Usage arrive in later phases.</Body>
+      <Body muted>Projects, Settings and Usage arrive in later phases.</Body>
       <BigButton label="Sign out" variant="danger" onPress={() => supabase.auth.signOut()} />
     </Screen>
   );

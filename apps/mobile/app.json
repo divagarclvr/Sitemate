@@ -32,6 +32,9 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+      ],
+      "blockedPermissions": [
+        "android.permission.WRITE_CONTACTS"
       ]
     },
     "web": {
@@ -64,6 +67,12 @@
             "*/*"
           ],
           "disableIOS": true
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "SiteMate reads your contacts so you can call vendors and link notes to people."
         }
       ]
     ],

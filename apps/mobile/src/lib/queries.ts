@@ -1,4 +1,12 @@
-import { IN_PROGRESS, type NoteDetail, type NoteListItem, type ProjectDto } from "@sitemate/shared";
+import {
+  IN_PROGRESS,
+  type ContactDetail,
+  type ContactDto,
+  type ContactInput,
+  type NoteDetail,
+  type NoteListItem,
+  type ProjectDto,
+} from "@sitemate/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
@@ -45,6 +53,36 @@ export function useNoteAction<T = unknown>(id: string, fn: (vars: T) => Promise<
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.note(id) });
       void qc.invalidateQueries({ queryKey: keys.notes });
+    },
+  });
+}
+
+// ─────────── contacts ───────────
+export const contactKeys = {
+  list: (q: string) => ["contacts", q] as const,
+  one: (id: string) => ["contact", id] as const,
+};
+
+export function useContacts(q: string) {
+  return useQuery({
+    queryKey: contactKeys.list(q),
+    queryFn: () => api<ContactDto[]>(`/v1/contacts${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "?limit=500"}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useContact(id: string) {
+  return useQuery({ queryKey: contactKeys.one(id), queryFn: () => api<ContactDetail>(`/v1/contacts/${id}`), enabled: !!id });
+}
+
+export function useSaveContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id?: string; body: Partial<ContactInput> }) =>
+      api<ContactDto>(v.id ? `/v1/contacts/${v.id}` : "/v1/contacts", { method: v.id ? "PATCH" : "POST", body: JSON.stringify(v.body) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["contacts"] });
+      void qc.invalidateQueries({ queryKey: ["contact"] });
     },
   });
 }

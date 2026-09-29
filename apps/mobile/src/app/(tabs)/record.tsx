@@ -7,7 +7,7 @@ import {
   useAudioRecorder,
 } from "expo-audio";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { ConsentSheet, Chip, LanguagePicker, ProjectPicker } from "@/components/pickers";
@@ -30,7 +30,18 @@ export default function RecordScreen() {
   const qc = useQueryClient();
   const recorder = useAudioRecorder(SPEECH_RECORDING);
 
+  // Opened from a contact or after a call: ?contactId=…&contactName=…&mode=voice_memo|text_memo
+  const params = useLocalSearchParams<{ contactId?: string; contactName?: string; mode?: Mode }>();
+  const [callWith, setCallWith] = useState<{ id: string; name: string } | null>(null);
+  const [speakerphone, setSpeakerphone] = useState(false);
   const [mode, setMode] = useState<Mode>("meeting");
+  useEffect(() => {
+    if (params.contactId) {
+      setCallWith({ id: params.contactId, name: params.contactName ?? "contact" });
+      if (params.mode) setMode(params.mode);
+      router.setParams({ contactId: undefined, contactName: undefined, mode: undefined }); // only once
+    }
+  }, [params.contactId, params.contactName, params.mode]);
   const [language, setLanguage] = useState<LanguageHint>("auto");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -188,7 +199,8 @@ export default function RecordScreen() {
       await queueRecording({
         localId: localId.current,
         tempUri: recorder.uri,
-        kind: mode === "meeting" ? "meeting" : "memo",
+        kind: callWith || speakerphone ? "call" : mode === "meeting" ? "meeting" : "memo",
+        contactId: callWith?.id ?? null,
         languageHint: language,
         projectId,
         startedAt: startedAt.current ?? new Date(),
@@ -196,6 +208,7 @@ export default function RecordScreen() {
       });
       setPhase("idle");
       setElapsed(0);
+      setCallWith(null);
       router.navigate("/notes");
     } catch (e) {
       await endBackground();
@@ -225,9 +238,16 @@ export default function RecordScreen() {
     try {
       await api("/v1/memos/text", {
         method: "POST",
-        body: JSON.stringify({ local_id: newLocalId(), text: memoText.trim(), project_id: projectId }),
+        body: JSON.stringify({
+          local_id: newLocalId(),
+          text: memoText.trim(),
+          project_id: projectId,
+          contact_id: callWith?.id ?? null,
+          kind: callWith ? "call" : "memo",
+        }),
       });
       setMemoText("");
+      setCallWith(null);
       void qc.invalidateQueries({ queryKey: keys.notes });
       router.navigate("/notes");
     } catch (e) {
@@ -272,6 +292,22 @@ export default function RecordScreen() {
         <Chip label="Text memo" selected={mode === "text_memo"} onPress={() => setMode("text_memo")} />
       </View>
 
+      {callWith && (
+        <Card>
+          <Body>📞 Notes for call with {callWith.name}</Body>
+          <BigButton label="Not a call note" variant="secondary" onPress={() => setCallWith(null)} />
+        </Card>
+      )}
+      {mode === "meeting" && !callWith && (
+        <Pressable onPress={() => setSpeakerphone((v) => !v)} accessibilityRole="switch" accessibilityState={{ checked: speakerphone }}>
+          <Card>
+            <Body>{speakerphone ? "☑" : "☐"} Speakerphone call</Body>
+            <Body muted>
+              For a call on speaker on another phone (or a laptop) near this one. Tell the other person the call is being recorded. Android doesn't let apps record a call on this same phone — for those, add notes right after the call.
+            </Body>
+          </Card>
+        </Pressable>
+      )}
       <ProjectPicker value={projectId} onChange={setProjectId} />
 
       {error && <ErrorBox message={error.message} hint={error.hint} />}

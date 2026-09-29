@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { startCallNotesPrompt } from "@/lib/calls";
 import { keys } from "@/lib/queries";
 import { incoming } from "@/offline/incoming";
 import { setOnUploaded, startUploadTriggers } from "@/offline/uploads";
@@ -21,7 +22,12 @@ function RootNavigator() {
   useEffect(() => {
     if (!session) return;
     setOnUploaded(() => void queryClient.invalidateQueries({ queryKey: keys.notes }));
-    return startUploadTriggers();
+    const stopUploads = startUploadTriggers();
+    const stopCallPrompt = startCallNotesPrompt();
+    return () => {
+      stopUploads();
+      stopCallPrompt();
+    };
   }, [session]);
 
   // Something was shared to SiteMate (from WhatsApp, Gmail, Files…) → "Save to SiteMate" screen.
@@ -50,6 +56,9 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="note/[id]" />
         <Stack.Screen name="share" />
+        <Stack.Screen name="contacts/index" />
+        <Stack.Screen name="contacts/[id]" />
+        <Stack.Screen name="contacts/edit" />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="(auth)" />

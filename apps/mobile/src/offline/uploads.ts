@@ -28,6 +28,7 @@ export interface PendingUpload {
   file_name: string | null;
   mime: string | null;
   related_note_id: string | null;
+  contact_id: string | null;
 }
 
 const recordingsDir = () => {
@@ -60,13 +61,14 @@ export async function queueRecording(input: {
   projectId: string | null;
   startedAt: Date;
   durationSec: number;
+  contactId?: string | null;
 }) {
   const src = new File(input.tempUri);
   const dest = new File(recordingsDir(), `${input.localId}.m4a`);
   src.move(dest); // out of the cache folder, which Android may clear
   await localDb.runAsync(
-    `insert or replace into pending_uploads (local_id, kind, upload_type, file_uri, language_hint, project_id, started_at, duration_sec, size_bytes)
-     values (?, ?, 'recording', ?, ?, ?, ?, ?, ?)`,
+    `insert or replace into pending_uploads (local_id, kind, upload_type, file_uri, language_hint, project_id, started_at, duration_sec, size_bytes, contact_id)
+     values (?, ?, 'recording', ?, ?, ?, ?, ?, ?, ?)`,
     input.localId,
     input.kind,
     dest.uri,
@@ -75,6 +77,7 @@ export async function queueRecording(input: {
     input.startedAt.toISOString(),
     input.durationSec,
     dest.size ?? 0,
+    input.contactId ?? null,
   );
   await refresh();
   void processUploads();
@@ -169,6 +172,7 @@ async function uploadOne(item: PendingUpload) {
       local_id: item.local_id,
       language_hint: item.language_hint,
       project_id: item.project_id,
+      contact_id: item.contact_id,
       started_at: item.started_at,
       duration_sec: item.duration_sec,
       mime: "audio/mp4",
