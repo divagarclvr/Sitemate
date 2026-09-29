@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { ConsentSheet, Chip, LanguagePicker, ProjectPicker } from "@/components/pickers";
 import { BigButton, Body, Card, ErrorBox, Screen, Title } from "@/components/ui";
+import { hasOwnRecordingService, startRecordingService, stopRecordingService } from "@/audio/foregroundService";
 import { formatDuration, SPEECH_RECORDING } from "@/audio/recording";
 import { api, ApiRequestError } from "@/lib/api";
 import { newLocalId } from "@/lib/ids";
@@ -42,6 +43,7 @@ export default function RecordScreen() {
   const [memoSaving, setMemoSaving] = useState(false);
   const startedAt = useRef<Date | null>(null);
   const blockedByPhone = useRef(false);
+  const ownService = useRef(false);
   const localId = useRef<string>("");
 
   // Timer + sound level while recording.
@@ -68,33 +70,60 @@ export default function RecordScreen() {
     else void start();
   };
 
-  const start = async () => {
-    setConsentOpen(false);
-    // Recording with the screen locked runs as an Android "foreground service", which must show a
-    // notification — so it needs the notification permission. Without it, record in the foreground only.
-    let background = true;
-    if (Platform.OS === "android") {
-      const n = await requestNotificationPermissionsAsync().catch(() => null);
-      background = !!n?.granted;
+  /** Android with our own service: record in the foreground, then keep it going via startForegroundService. */
+  const startWithOwnService = async (notificationsOk: boolean) => {
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: false });
+    await recorder.prepareToRecordAsync();
+    recorder.record();
+    if (!notificationsOk) return false;
+    try {
+      await startRecordingService(mode === "meeting" ? "Recording meeting" : "Recording voice memo");
+      // The service keeps the microphone allowed; tell expo-audio not to pause when the screen locks.
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: true });
+      ownService.current = true;
+      return true;
+    } catch (e) {
+      console.warn("[record] SiteMate recording service refused:", errorText(e));
+      blockedByPhone.current = true;
+      return false;
     }
+  };
+
+  /** Older app builds / iOS: expo-audio's own background service, falling back to foreground-only. */
+  const startWithExpoService = async (notificationsOk: boolean) => {
     const begin = async (withBackground: boolean) => {
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: withBackground });
       await recorder.prepareToRecordAsync();
       await recordWhenServiceReady(recorder);
     };
     try {
-      try {
-        await begin(background);
-      } catch (e) {
-        // Some phones (often Xiaomi/Vivo/Oppo/Realme) refuse the background recording service.
-        // Record anyway in the foreground and keep the screen on so it isn't interrupted.
-        if (!background || !/recording service/i.test(errorText(e))) throw e;
-        console.warn("[record] background service refused, recording in foreground:", errorText(e));
-        await recorder.stop().catch(() => undefined);
-        background = false;
-        await begin(false);
-        blockedByPhone.current = true;
-      }
+      await begin(notificationsOk);
+      return notificationsOk;
+    } catch (e) {
+      // Some phones (e.g. Vivo/iQOO) refuse this service. Record in the foreground instead.
+      if (!notificationsOk || !/recording service/i.test(errorText(e))) throw e;
+      console.warn("[record] background service refused, recording in foreground:", errorText(e));
+      await recorder.stop().catch(() => undefined);
+      await begin(false);
+      blockedByPhone.current = true;
+      return false;
+    }
+  };
+
+  const start = async () => {
+    setConsentOpen(false);
+    blockedByPhone.current = false;
+    // Recording with the screen locked needs an Android foreground service, which must show a
+    // notification — so it needs the notification permission.
+    let notificationsOk = true;
+    if (Platform.OS === "android") {
+      const n = await requestNotificationPermissionsAsync().catch(() => null);
+      notificationsOk = !!n?.granted;
+    }
+    try {
+      const background = hasOwnRecordingService
+        ? await startWithOwnService(notificationsOk)
+        : await startWithExpoService(notificationsOk);
       if (!background) await activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => undefined);
       startedAt.current = new Date();
       localId.current = newLocalId();
@@ -110,27 +139,51 @@ export default function RecordScreen() {
     } catch (e) {
       console.warn("[record] start failed:", errorText(e)); // appears in the laptop's Expo log
       await recorder.stop().catch(() => undefined); // release the half-started recorder so Retry works
+      await endBackground();
       setError({ message: "Couldn't start recording.", hint: `${errorText(e)}. Close other apps using the microphone (calls, WhatsApp voice) and try again.` });
     }
   };
 
-  const togglePause = () => {
+  const togglePause = async () => {
     if (phase === "recording") {
       recorder.pause();
       setPhase("paused");
-    } else {
-      recorder.record();
+      return;
+    }
+    try {
+      if (ownService.current) {
+        // record() refuses while expo-audio thinks its own service should be used; switch briefly.
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: false });
+        recorder.record();
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: true });
+      } else {
+        recorder.record();
+      }
       setPhase("recording");
+    } catch (e) {
+      setError({ message: "Couldn't resume recording.", hint: errorText(e) });
     }
   };
+
+  /** Stops our service, the screen-on lock and background mode (safe to call any time). */
+  const endBackground = async () => {
+    ownService.current = false;
+    await stopRecordingService();
+    await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false }).catch(() => undefined);
+    await deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
+  };
+
+  // A service left running by an app reload (not a real recording) is stopped when this screen opens.
+  useEffect(() => {
+    void stopRecordingService();
+  }, []);
 
   const stopAndSave = async () => {
     setPhase("saving");
     try {
       const durationMs = recorder.getStatus().durationMillis;
       await recorder.stop();
-      await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false });
-      void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
+      await endBackground();
       if (!recorder.uri) throw new Error("no audio file was produced");
       await queueRecording({
         localId: localId.current,
@@ -145,6 +198,7 @@ export default function RecordScreen() {
       setElapsed(0);
       router.navigate("/notes");
     } catch (e) {
+      await endBackground();
       setPhase("idle");
       setError({ message: "Couldn't save the recording.", hint: String(e) });
     }
@@ -158,8 +212,7 @@ export default function RecordScreen() {
         style: "destructive",
         onPress: async () => {
           await recorder.stop().catch(() => undefined);
-          await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false });
-          void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
+          await endBackground();
           setPhase("idle");
           setElapsed(0);
         },
@@ -201,7 +254,7 @@ export default function RecordScreen() {
           {warning ? <Body>{warning}</Body> : <Body muted>Keeps recording when the screen is locked.</Body>}
         </View>
         <View style={{ gap: 12 }}>
-          <BigButton label={phase === "paused" ? "Resume" : "Pause"} variant="secondary" onPress={togglePause} disabled={phase === "saving"} />
+          <BigButton label={phase === "paused" ? "Resume" : "Pause"} variant="secondary" onPress={() => void togglePause()} disabled={phase === "saving"} />
           <BigButton label="Stop and make note" onPress={stopAndSave} loading={phase === "saving"} />
           <BigButton label="Discard" variant="danger" onPress={discard} disabled={phase === "saving"} />
         </View>
