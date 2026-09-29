@@ -29,6 +29,8 @@ export const CreateRecordingNoteBody = z.object({
   local_id: z.string().min(8).max(64),
   language_hint: LanguageHint.default("auto"),
   project_id: z.uuid().nullable().optional(),
+  /** For call notes: who the call was with. */
+  contact_id: z.uuid().nullable().optional(),
   started_at: z.iso.datetime(),
   duration_sec: z.number().int().nonnegative().nullable().optional(),
   mime: z.string().default("audio/mp4"),
@@ -41,6 +43,8 @@ export const CreateTextMemoBody = z.object({
   local_id: z.string().min(8).max(64),
   text: z.string().min(1).max(50_000),
   project_id: z.uuid().nullable().optional(),
+  contact_id: z.uuid().nullable().optional(),
+  kind: z.enum(["memo", "call"]).default("memo"),
   started_at: z.iso.datetime().optional(),
 });
 export type CreateTextMemoBody = z.infer<typeof CreateTextMemoBody>;
@@ -133,6 +137,8 @@ export interface NoteListItem {
   duration_sec: number | null;
   project_id: string | null;
   project_name: string | null;
+  contact_id: string | null;
+  contact_name: string | null;
   summary: string | null;
   open_tasks: number;
 }

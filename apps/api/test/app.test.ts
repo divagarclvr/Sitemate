@@ -14,6 +14,7 @@ const app = await buildApp({
   }) as unknown as Sql,
   ai: { llm: main, main, fallback },
   storage: {} as never,
+  stt: {} as never,
   verifyToken: async (token) => {
     if (token === "owner") return { id: "u1", email: "owner@example.com" };
     if (token === "stranger") return { id: "u2", email: "someone@else.com" };

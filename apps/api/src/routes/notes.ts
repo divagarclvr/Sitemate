@@ -26,7 +26,8 @@ export interface NotesRouteDeps {
 
 const LIST_COLUMNS = (db: Sql) => db`
   n.id, n.kind, n.title, n.status, n.progress_text, n.error_message, n.started_at, n.duration_sec,
-  n.project_id, p.name as project_name, n.summary,
+  n.project_id, p.name as project_name, n.contact_id,
+  (select c.name from contacts c where c.id = n.contact_id) as contact_name, n.summary,
   (select count(*)::int from tasks t where t.note_id = n.id and t.status = 'open') as open_tasks`;
 
 export function notesRoutes({ db, storage, kickWorker }: NotesRouteDeps) {
@@ -54,8 +55,8 @@ export function notesRoutes({ db, storage, kickWorker }: NotesRouteDeps) {
 
       // Same local_id again (retry after a network drop) → same note.
       const [note] = await db<{ id: string }[]>`
-        insert into notes (user_id, kind, status, language_hint, project_id, started_at, duration_sec, local_id, progress_text)
-        values (${userId}, ${b.kind}, 'uploading', ${b.language_hint}, ${b.project_id ?? null}, ${b.started_at},
+        insert into notes (user_id, kind, status, language_hint, project_id, contact_id, started_at, duration_sec, local_id, progress_text)
+        values (${userId}, ${b.kind}, 'uploading', ${b.language_hint}, ${b.project_id ?? null}, ${b.contact_id ?? null}, ${b.started_at},
                 ${b.duration_sec ?? null}, ${b.local_id}, 'Uploading recording…')
         on conflict (user_id, local_id) where local_id is not null
         do update set updated_at = now()
@@ -97,8 +98,8 @@ export function notesRoutes({ db, storage, kickWorker }: NotesRouteDeps) {
       const b = parse(CreateTextMemoBody, req.body);
       const userId = req.user!.id;
       const [note] = await db<{ id: string; created: boolean }[]>`
-        insert into notes (user_id, kind, status, transcript_text, project_id, started_at, local_id, progress_text)
-        values (${userId}, 'memo', 'queued', ${b.text}, ${b.project_id ?? null}, ${b.started_at ?? new Date().toISOString()},
+        insert into notes (user_id, kind, status, transcript_text, project_id, contact_id, started_at, local_id, progress_text)
+        values (${userId}, ${b.kind}, 'queued', ${b.text}, ${b.project_id ?? null}, ${b.contact_id ?? null}, ${b.started_at ?? new Date().toISOString()},
                 ${b.local_id}, 'Writing your note…')
         on conflict (user_id, local_id) where local_id is not null do update set updated_at = now()
         returning id, (xmax = 0) as created`;

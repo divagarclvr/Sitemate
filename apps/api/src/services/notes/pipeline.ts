@@ -56,6 +56,8 @@ interface NoteRow {
   transcript_text: string | null;
   project_name: string | null;
   transcript_script: "original" | "romanised";
+  contact_id: string | null;
+  contact_label: string | null;
 }
 
 /** Max characters of transcript sent per clean-up call (keeps replies well inside output limits). */
@@ -299,6 +301,7 @@ export class NotePipeline {
   }
 
   private async summariseAndSave(note: NoteRow, transcript: string, source?: string) {
+    if (!source && note.contact_label) source = `Phone call with: ${note.contact_label} (notes recorded by the estimator after/while calling)`;
     await this.setStatus(note.id, "summarising", note.kind === "meeting" ? "Writing your meeting note…" : "Writing your note…");
     if (transcript.length > MAX_SUMMARY_CHARS) {
       transcript =
@@ -388,6 +391,22 @@ export class NotePipeline {
         )}`;
       }
 
+      // Link people to saved contacts: the call's contact, and task owners whose names match a contact.
+      if (note.contact_id) {
+        await tx`insert into note_contacts (user_id, note_id, contact_id) values (${u}, ${note.id}, ${note.contact_id}) on conflict do nothing`;
+      }
+      await tx`
+        update tasks t set owner_contact_id = m.contact_id
+        from (
+          select distinct on (t2.id) t2.id as task_id, c.id as contact_id
+          from tasks t2 join contacts c on c.user_id = ${u}
+          where t2.note_id = ${note.id} and t2.owner_contact_id is null and t2.owner_text is not null
+            and lower(t2.owner_text) not in ('me', 'myself', 'i')
+            and similarity(lower(t2.owner_text), lower(c.name)) > 0.45
+          order by t2.id, similarity(lower(t2.owner_text), lower(c.name)) desc
+        ) m
+        where t.id = m.task_id`;
+
       await tx`delete from follow_up_suggestions where note_id = ${note.id} and status = 'pending'`;
       if (s.follow_ups.length) {
         await tx`insert into follow_up_suggestions ${tx(
@@ -406,7 +425,8 @@ export class NotePipeline {
   private async loadNote(noteId: string): Promise<NoteRow> {
     const [row] = await this.d.db<NoteRow[]>`
       select n.id, n.user_id, n.kind, n.language_hint, n.started_at, n.duration_sec, n.project_id,
-             n.transcript_text, p.name as project_name,
+             n.transcript_text, p.name as project_name, n.contact_id,
+             (select concat_ws(', ', c.name, c.company, c.role) from contacts c where c.id = n.contact_id) as contact_label,
              coalesce(s.transcript_script, 'original') as transcript_script
       from notes n
       left join projects p on p.id = n.project_id

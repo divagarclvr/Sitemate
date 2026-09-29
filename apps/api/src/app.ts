@@ -6,6 +6,7 @@ import type { Env } from "./config/env";
 import type { Sql } from "./db/client";
 import { registerAuth, type TokenVerifier } from "./plugins/auth";
 import { registerErrorHandler } from "./plugins/errors";
+import { contactsRoutes } from "./routes/contacts";
 import { diagnosticsRoutes } from "./routes/diagnostics";
 import { filesRoutes } from "./routes/files";
 import { healthRoutes } from "./routes/health";
@@ -14,18 +15,20 @@ import { notesRoutes } from "./routes/notes";
 import { projectsRoutes } from "./routes/projects";
 import type { AiProviders } from "./services/ai";
 import type { FileStorage } from "./services/storage";
+import type { SttProvider } from "./services/stt/types";
 
 export interface AppDeps {
   env: Env;
   db: Sql;
   ai: AiProviders;
   storage: FileStorage;
+  stt: SttProvider;
   verifyToken: TokenVerifier;
   /** Wakes the background worker when a job is queued. */
   kickWorker?: () => void;
 }
 
-export async function buildApp({ env, db, ai, storage, verifyToken, kickWorker = () => {} }: AppDeps) {
+export async function buildApp({ env, db, ai, storage, stt, verifyToken, kickWorker = () => {} }: AppDeps) {
   const app = Fastify({
     logger: env.NODE_ENV === "test" ? false : { level: "info", redact: ["req.headers.authorization"] },
     bodyLimit: 1024 * 1024,
@@ -45,6 +48,7 @@ export async function buildApp({ env, db, ai, storage, verifyToken, kickWorker =
   await app.register(projectsRoutes(db));
   await app.register(notesRoutes({ db, storage, kickWorker }));
   await app.register(filesRoutes({ db, storage, kickWorker }));
+  await app.register(contactsRoutes({ db, llm: ai.llm, stt }));
 
   return app;
 }

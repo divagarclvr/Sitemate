@@ -24,6 +24,7 @@ async function main() {
     db,
     ai,
     storage,
+    stt,
     verifyToken: supabaseVerifier(env),
     kickWorker: () => worker?.kick(),
   });
