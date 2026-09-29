@@ -475,7 +475,7 @@ No credit card is needed for any of these. Settings → Usage shows every limit 
 ```
 NODE_ENV=development
 PORT=8080
-PUBLIC_BASE_URL=https://sitemate-api.onrender.com
+PUBLIC_BASE_URL=https://sitemate-api-9pm3.onrender.com
 APP_SCHEME=sitemate
 TZ_DEFAULT=Asia/Kolkata
 
