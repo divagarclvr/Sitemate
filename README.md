@@ -277,6 +277,19 @@ Use **Open** or **Share** on the note to view it or send it again on WhatsApp or
 
 ---
 
+## Phase 4 — contacts and calling
+
+- **More → Contacts** shows your contacts. Tap **Import phone contacts** once; SiteMate only *reads* your
+  contacts (name, company, job title and numbers) and can't change them. Add your own with **＋ New contact**,
+  including company, role, projects and other names people use ("Ramesh Steel").
+- **Call someone:** type or tap 🎤 and say *"Call Ramesh from the steel vendor"*. SiteMate shows the
+  matching person and number, and **nothing is dialled until you tap Call**.
+- **After the call**, when you come back to SiteMate, it asks **"Add notes for this call?"**. Choose a voice or
+  typed note, and it's saved as a call note linked to that person.
+- The **contact page** shows every call, meeting and file with that person, plus their open action items.
+- **Speakerphone call** on the Record screen is for a call on speaker on *another* phone or laptop nearby.
+  Android doesn't allow apps to record a call on the same phone, so for those, add notes right after the call.
+
 ## Commands reference
 
 | Command | What it does |

@@ -600,6 +600,22 @@ Each phase ends with: tests passing (`npm test`), README section "How to run Pha
   and as transcript segments; summarised with the file described in the prompt (max 350k chars, noted if cut).
 - Verified end to end 2026-09-29 with PDF, XLSX, DOCX, WhatsApp zip and a bill photo (5 "[Test]" notes).
 
+## 12c. Phase 4 notes (as built)
+
+- Migration 0004: `contacts.search_text` (trigger: name+company+role+aliases) + trigram indexes.
+- API: `/v1/contacts` (list/search, CRUD with `contact_projects`), `/v1/contacts/import` (upsert on
+  device_contact_id, only fills empty company/role, refreshes numbers), `/v1/contacts/:id` (notes via
+  notes.contact_id/note_contacts, open tasks via tasks.owner_contact_id), `/v1/contacts/resolve`
+  (`services/contacts/resolve.ts`: cleanQuery strips command words, keeps \p{M}; trigram + phone-digit
+  search; AI (lite) only when ambiguous; fuzzy fallback), `/v1/voice/transcribe` (base64 ≤ ~2 MB → Whisper).
+- Notes: `contact_id` on recordings/memos (`kind: 'call'`); pipeline adds the call context to the prompt,
+  links the contact in note_contacts and sets tasks.owner_contact_id by name similarity > 0.45.
+- App: `expo-contacts` (READ only; WRITE_CONTACTS in android.blockedPermissions), `lib/phoneContacts.ts`,
+  `lib/calls.ts` (confirm → `tel:`; pending call in sqlite `kv`; AppState prompt 8 s–2 h after dialling),
+  `components/CallCommand.tsx` (text or 8 s voice → transcribe → resolve → confirm sheet), screens
+  `contacts/index|[id]|edit`, Record screen accepts `contactId/contactName/mode` params.
+- Typed routes list the Contacts list as "/contacts/index"; use `CONTACTS_ROUTE` from lib/calls.
+
 ## 13. Conventions
 
 - TypeScript `strict`; zod at every boundary (env, HTTP input, AI output, file parsers).
