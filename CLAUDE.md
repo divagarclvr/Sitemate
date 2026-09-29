@@ -582,6 +582,24 @@ Each phase ends with: tests passing (`npm test`), README section "How to run Pha
   drops Whisper segments it marks unreliable (`isLikelyHallucination`). Gemini (lite) transcribed a
   quiet Tamil+English sample better than Whisper — candidate STT provider if Whisper stays weak.
 
+## 12b. Phase 3 notes (as built)
+
+- Mobile: `expo-share-intent` (Android SEND/SEND_MULTIPLE `*/*`; iOS extension disabled for now) →
+  `+native-intent.ts` redirects to `/share`; root layout copies the share intent into `offline/incoming.ts`
+  (also used by the Notes "+ Add file" document picker). Save screen: project, optional related meeting,
+  voice-note language. Files are copied to `Paths.document/uploads` and go through the same upload queue
+  (`upload_type = 'file'`).
+- API: `POST /v1/files` → note (kind `file`, or `chat_export` for "WhatsApp Chat with …") + `files` row +
+  signed upload URL; `POST /v1/files/:id/uploaded` → `process_file` job; `GET /v1/files/:id/download-url`.
+  Note detail returns `files`, `related_note`, `attachments` (notes.related_note_id).
+- Pipeline `processFile`: detect by magic bytes (`file-type`) + name → PDF (`pdf-parse`; <30 chars/page =
+  scan → Gemini reads the PDF inline, ≤18 MB), Word (`mammoth`), Excel/CSV (SheetJS 0.20.3 from
+  cdn.sheetjs.com, all sheets, 3,000 rows each), PowerPoint (`officeparser`), text, WhatsApp (.txt or .zip via
+  `jszip`, voice notes transcribed and inserted in place), photos (HEIC via `heic-convert`, `sharp` resize →
+  Gemini vision with `VISION_PROMPT`), audio (same STT path). Extracted text saved to `files.extracted_text`
+  and as transcript segments; summarised with the file described in the prompt (max 350k chars, noted if cut).
+- Verified end to end 2026-09-29 with PDF, XLSX, DOCX, WhatsApp zip and a bill photo (5 "[Test]" notes).
+
 ## 13. Conventions
 
 - TypeScript `strict`; zod at every boundary (env, HTTP input, AI output, file parsers).

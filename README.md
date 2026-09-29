@@ -242,6 +242,41 @@ npm run try:audio -w @sitemate/api -- "C:\path\to\recording.m4a" ta
 
 ---
 
+## Phase 3 — sharing files into SiteMate
+
+**One-time setup:** update the database, then install the new SiteMate APK (Phase 2, steps 3–4):
+```bash
+npm run db:migrate -w @sitemate/api
+```
+
+**What works:**
+- **Share to SiteMate** from WhatsApp, Gmail, Files, Photos and similar apps: tap **Share**, then **SiteMate**.
+  You can share one file or several.
+- **＋ Add file** on the Notes screen picks files from the phone.
+- On the **Save to SiteMate** screen, choose the project, optionally attach the file to a recent
+  meeting, and tap **Save**. It uploads when there's internet.
+
+| File type | What SiteMate does |
+|---|---|
+| PDF | Reads the text; for scanned PDFs, the AI reads the pages |
+| Word (.docx) | Reads the text |
+| Excel (.xlsx/.xls/.csv) | Reads every sheet (the first 3,000 rows of each) |
+| PowerPoint (.pptx) | Reads the slides |
+| Photos (JPG/PNG/HEIC) | The AI reads whiteboards, handwritten notes, drawings and bills |
+| Audio (MP3, M4A, OPUS/OGG WhatsApp voice notes, WAV) | Transcribes like a recording |
+| WhatsApp chat export (.txt or .zip) | Reads the chat and transcribes voice notes where they appear |
+
+Each file becomes a note with a summary, amounts, action items and follow-ups. The **original is kept**.
+Use **Open** or **Share** on the note to view it or send it again on WhatsApp or Gmail.
+
+**Test it:**
+1. In WhatsApp, open a chat with a PDF quotation, tap the file, then **Share → SiteMate**.
+2. Pick the project and tap **Save file**.
+3. The Notes screen shows *Uploading → Reading the file → Summarising → Done*.
+4. Open the note to check the summary, figures and **Content** tab, then tap **Open** to see the original.
+
+---
+
 ## Commands reference
 
 | Command | What it does |
