@@ -51,6 +51,20 @@
           "recordAudioAndroid": true,
           "enableBackgroundRecording": true
         }
+      ],
+      "expo-sharing",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": [
+            "text/*",
+            "*/*"
+          ],
+          "androidMultiIntentFilters": [
+            "*/*"
+          ],
+          "disableIOS": true
+        }
       ]
     ],
     "extra": {

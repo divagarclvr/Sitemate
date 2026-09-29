@@ -20,3 +20,17 @@ localDb.execSync(`
     created_at    text not null default (datetime('now'))
   );
 `);
+
+// Phase 3: the same queue also carries shared/uploaded files.
+for (const col of [
+  "upload_type text not null default 'recording'", // recording | file
+  "file_name text",
+  "mime text",
+  "related_note_id text",
+]) {
+  try {
+    localDb.execSync(`alter table pending_uploads add column ${col}`);
+  } catch {
+    // column already exists
+  }
+}

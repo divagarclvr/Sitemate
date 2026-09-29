@@ -1,13 +1,16 @@
 import type { NoteListItem } from "@sitemate/shared";
+import { getDocumentAsync } from "expo-document-picker";
 import { router } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBadge } from "@/components/pickers";
+import { BigButton } from "@/components/ui";
 import { Body, ErrorBox } from "@/components/ui";
 import { formatDuration } from "@/audio/recording";
 import { ApiRequestError } from "@/lib/api";
 import { useNotes } from "@/lib/queries";
+import { fileIcon, incoming } from "@/offline/incoming";
 import { processUploads, uploadQueue } from "@/offline/uploads";
 import { sizes, useTheme } from "@/theme";
 
@@ -27,6 +30,17 @@ export default function NotesScreen() {
     void notes.refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending.length]);
+
+  const addFiles = async () => {
+    const r = await getDocumentAsync({ multiple: true, copyToCacheDirectory: true, type: "*/*" });
+    if (r.canceled || !r.assets?.length) return;
+    incoming.set({
+      source: "picker",
+      text: null,
+      files: r.assets.map((a) => ({ uri: a.uri, name: a.name, mime: a.mimeType ?? null, size: a.size ?? null })),
+    });
+    router.push("/share");
+  };
 
   const shown = (notes.data ?? []).filter((n) => {
     if (!q.trim()) return true;
@@ -70,6 +84,7 @@ export default function NotesScreen() {
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
             <Text style={[styles.h1, { color: t.text }]}>Notes</Text>
+            <BigButton label="＋ Add file (PDF, Excel, photo, audio…)" variant="secondary" onPress={addFiles} />
             <TextInput
               value={q}
               onChangeText={setQ}
@@ -82,10 +97,13 @@ export default function NotesScreen() {
                 <View style={styles.rowBetween}>
                   <StatusBadge status={p.status === "uploading" ? "uploading" : "local"} />
                   <Text style={{ color: t.muted, fontSize: 14 }}>
-                    {when(p.started_at)} · {formatDuration((p.duration_sec ?? 0) * 1000)}
+                    {when(p.started_at)}
+                    {p.upload_type === "file" ? "" : ` · ${formatDuration((p.duration_sec ?? 0) * 1000)}`}
                   </Text>
                 </View>
-                <Text style={[styles.title, { color: t.text }]}>{p.kind === "memo" ? "Voice memo" : "Meeting recording"}</Text>
+                <Text style={[styles.title, { color: t.text }]} numberOfLines={2}>
+                  {p.upload_type === "file" ? `${fileIcon(p.file_name ?? "", p.mime)} ${p.file_name ?? "File"}` : p.kind === "memo" ? "Voice memo" : "Meeting recording"}
+                </Text>
                 <Text style={{ color: p.status === "failed" ? t.danger : t.muted, fontSize: 16 }}>
                   {p.status === "uploading"
                     ? "Uploading…"

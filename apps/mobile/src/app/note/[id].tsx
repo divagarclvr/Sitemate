@@ -1,12 +1,15 @@
-import { IN_PROGRESS, type FigureDto, type NoteDetail, type TaskDto, type TranscriptSegmentDto } from "@sitemate/shared";
+import { IN_PROGRESS, type FigureDto, type FileDto, type NoteDetail, type NoteRef, type TaskDto, type TranscriptSegmentDto } from "@sitemate/shared";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
+import { Directory, File, Paths } from "expo-file-system";
+import { shareAsync } from "expo-sharing";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Chip, StatusBadge } from "@/components/pickers";
 import { BigButton, Body, Card, ErrorBox, Field, Screen, Title } from "@/components/ui";
 import { formatDuration } from "@/audio/recording";
 import { api, ApiRequestError } from "@/lib/api";
+import { describeSize, fileIcon } from "@/offline/incoming";
 import { useNote, useNoteAction } from "@/lib/queries";
 import { sizes, useTheme } from "@/theme";
 
@@ -67,6 +70,9 @@ export default function NoteScreen() {
       )}
 
       {n.has_audio && <AudioPlayerCard noteId={id} />}
+      {n.files.length > 0 && <FilesCard files={n.files} />}
+      {n.related_note && <NoteLinks title="Attached to meeting" notes={[n.related_note]} />}
+      {n.attachments.length > 0 && <NoteLinks title="Files attached to this meeting" notes={n.attachments} />}
 
       <View style={styles.rowWrap}>
         {(["summary", "actions", "figures", "transcript"] as Tab[]).map((k) => (
@@ -75,7 +81,15 @@ export default function NoteScreen() {
             selected={tab === k}
             onPress={() => setTab(k)}
             label={
-              k === "summary" ? "Summary" : k === "actions" ? `Actions (${n.tasks.filter((x) => x.status === "open").length})` : k === "figures" ? `Figures (${n.figures.length})` : "Transcript"
+              k === "summary"
+                ? "Summary"
+                : k === "actions"
+                  ? `Actions (${n.tasks.filter((x) => x.status === "open").length})`
+                  : k === "figures"
+                    ? `Figures (${n.figures.length})`
+                    : n.kind === "file" || n.kind === "chat_export"
+                      ? "Content"
+                      : "Transcript"
             }
           />
         ))}
@@ -298,6 +312,87 @@ function AudioPlayerCard({ noteId }: { noteId: string }) {
         label={!url ? "▶ Play recording" : status.playing ? "⏸ Pause" : "▶ Play"}
         onPress={() => (!url ? load() : status.playing ? player.pause() : player.play())}
       />
+    </Card>
+  );
+}
+
+function FilesCard({ files }: { files: FileDto[] }) {
+  const t = useTheme();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const link = (f: FileDto) => api<{ url: string; file_name: string; mime: string | null }>(`/v1/files/${f.id}/download-url`);
+
+  const open = async (f: FileDto) => {
+    setErr(null);
+    setBusy(f.id + "open");
+    try {
+      await Linking.openURL((await link(f)).url);
+    } catch (e) {
+      setErr(e instanceof ApiRequestError ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Downloads the original, then opens Android's share sheet (WhatsApp, Gmail…). */
+  const share = async (f: FileDto) => {
+    setErr(null);
+    setBusy(f.id + "share");
+    try {
+      const { url, file_name, mime } = await link(f);
+      const dir = new Directory(Paths.cache, "shared");
+      if (!dir.exists) dir.create({ intermediates: true });
+      const dest = new File(dir, file_name.replace(/[\/:*?"<>|]/g, "_"));
+      if (dest.exists) dest.delete();
+      const saved = await File.downloadFileAsync(url, dest);
+      await shareAsync(saved.uri, { mimeType: mime ?? undefined, dialogTitle: file_name });
+    } catch (e) {
+      setErr(e instanceof ApiRequestError ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Card>
+      <Body muted>Original file</Body>
+      {files.map((f) => (
+        <View key={f.id} style={{ gap: 8 }}>
+          <Text style={{ color: t.text, fontSize: sizes.font, fontWeight: "600" }}>
+            {fileIcon(f.original_name, f.mime)} {f.original_name}
+          </Text>
+          <Text style={{ color: t.muted, fontSize: 14 }}>
+            {[describeSize(f.size_bytes), f.page_count ? `${f.page_count} page${f.page_count > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ")}
+          </Text>
+          <View style={styles.rowWrap}>
+            <View style={{ flex: 1 }}>
+              <BigButton label="Open" variant="secondary" onPress={() => open(f)} loading={busy === f.id + "open"} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <BigButton label="Share" variant="secondary" onPress={() => share(f)} loading={busy === f.id + "share"} />
+            </View>
+          </View>
+        </View>
+      ))}
+      {err && <Body muted>{err}</Body>}
+    </Card>
+  );
+}
+
+function NoteLinks({ title, notes }: { title: string; notes: NoteRef[] }) {
+  const t = useTheme();
+  return (
+    <Card>
+      <Body muted>{title}</Body>
+      {notes.map((r) => (
+        <Pressable key={r.id} onPress={() => router.push({ pathname: "/note/[id]", params: { id: r.id } })} accessibilityRole="link">
+          <Text style={{ color: t.primary, fontSize: sizes.font, fontWeight: "600" }}>
+            {r.title ?? "Note"}
+            {r.started_at ? ` · ${new Date(r.started_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""} ›
+          </Text>
+        </Pressable>
+      ))}
     </Card>
   );
 }

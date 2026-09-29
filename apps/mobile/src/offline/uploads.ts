@@ -1,4 +1,4 @@
-import type { CreateRecordingNoteResponse, LanguageHint } from "@sitemate/shared";
+import type { CreateFileResponse, CreateRecordingNoteResponse, LanguageHint } from "@sitemate/shared";
 import { Directory, File, Paths } from "expo-file-system";
 import { addNetworkStateListener, getNetworkStateAsync } from "expo-network";
 import { AppState } from "react-native";
@@ -24,6 +24,10 @@ export interface PendingUpload {
   status: "pending" | "uploading" | "failed";
   attempts: number;
   last_error: string | null;
+  upload_type: "recording" | "file";
+  file_name: string | null;
+  mime: string | null;
+  related_note_id: string | null;
 }
 
 const recordingsDir = () => {
@@ -61,8 +65,8 @@ export async function queueRecording(input: {
   const dest = new File(recordingsDir(), `${input.localId}.m4a`);
   src.move(dest); // out of the cache folder, which Android may clear
   await localDb.runAsync(
-    `insert or replace into pending_uploads (local_id, kind, file_uri, language_hint, project_id, started_at, duration_sec, size_bytes)
-     values (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `insert or replace into pending_uploads (local_id, kind, upload_type, file_uri, language_hint, project_id, started_at, duration_sec, size_bytes)
+     values (?, ?, 'recording', ?, ?, ?, ?, ?, ?)`,
     input.localId,
     input.kind,
     dest.uri,
@@ -74,6 +78,38 @@ export async function queueRecording(input: {
   );
   await refresh();
   void processUploads();
+}
+
+/** Copies a shared/picked file into permanent storage and queues it for upload. */
+export async function queueFile(input: {
+  localId: string;
+  sourceUri: string;
+  fileName: string;
+  mime: string | null;
+  projectId: string | null;
+  relatedNoteId: string | null;
+  languageHint: LanguageHint;
+}) {
+  const dir = new Directory(Paths.document, "uploads");
+  if (!dir.exists) dir.create({ intermediates: true });
+  const ext = input.fileName.includes(".") ? input.fileName.slice(input.fileName.lastIndexOf(".")).toLowerCase() : "";
+  const dest = new File(dir, `${input.localId}${ext.replace(/[^.a-z0-9]/g, "")}`);
+  new File(input.sourceUri).copy(dest); // share folders are temporary; keep our own copy until uploaded
+  await localDb.runAsync(
+    `insert or replace into pending_uploads
+       (local_id, kind, upload_type, file_uri, file_name, mime, language_hint, project_id, related_note_id, started_at, size_bytes)
+     values (?, 'meeting', 'file', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    input.localId,
+    dest.uri,
+    input.fileName,
+    input.mime,
+    input.languageHint,
+    input.projectId,
+    input.relatedNoteId,
+    new Date().toISOString(),
+    dest.size ?? 0,
+  );
+  await refresh();
 }
 
 let running = false;
@@ -124,6 +160,7 @@ async function uploadOne(item: PendingUpload) {
   }
   await localDb.runAsync("update pending_uploads set status = 'uploading' where local_id = ?", item.local_id);
   await refresh();
+  if (item.upload_type === "file") return uploadSharedFile(item, file);
 
   const created = await api<CreateRecordingNoteResponse>("/v1/notes", {
     method: "POST",
@@ -157,6 +194,33 @@ async function uploadOne(item: PendingUpload) {
   await api(`/v1/notes/${created.note_id}/recording-uploaded`, { method: "POST", body: "{}" });
 
   // Safely on the server now — free the phone's storage.
+  file.delete();
+  await localDb.runAsync("delete from pending_uploads where local_id = ?", item.local_id);
+}
+
+async function uploadSharedFile(item: PendingUpload, file: File) {
+  const created = await api<CreateFileResponse>("/v1/files", {
+    method: "POST",
+    body: JSON.stringify({
+      local_id: item.local_id,
+      file_name: item.file_name ?? "file",
+      mime: item.mime,
+      size_bytes: file.size ?? item.size_bytes,
+      project_id: item.project_id,
+      related_note_id: item.related_note_id,
+      language_hint: item.language_hint,
+    }),
+  });
+  await localDb.runAsync("update pending_uploads set note_id = ? where local_id = ?", created.note_id, item.local_id);
+  if (created.upload) {
+    const res = await file
+      .createUploadTask(created.upload.url, { httpMethod: "PUT", headers: { "content-type": created.upload.content_type } })
+      .uploadAsync();
+    if (res.status < 200 || res.status >= 300) {
+      throw new ApiRequestError(`Upload failed (HTTP ${res.status})`, "Will retry automatically.", res.status);
+    }
+  }
+  await api(`/v1/files/${created.file_id}/uploaded`, { method: "POST", body: "{}" });
   file.delete();
   await localDb.runAsync("delete from pending_uploads where local_id = ?", item.local_id);
 }
