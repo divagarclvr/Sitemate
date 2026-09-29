@@ -6,6 +6,7 @@ import type { Env } from "./config/env";
 import type { Sql } from "./db/client";
 import { registerAuth, type TokenVerifier } from "./plugins/auth";
 import { registerErrorHandler } from "./plugins/errors";
+import { chatRoutes } from "./routes/chat";
 import { contactsRoutes } from "./routes/contacts";
 import { diagnosticsRoutes } from "./routes/diagnostics";
 import { filesRoutes } from "./routes/files";
@@ -15,6 +16,7 @@ import { notesRoutes } from "./routes/notes";
 import { plannerRoutes } from "./routes/planner";
 import { projectsRoutes } from "./routes/projects";
 import type { AiProviders } from "./services/ai";
+import type { EmbeddingProvider } from "./services/search/embeddings";
 import type { FileStorage } from "./services/storage";
 import type { SttProvider } from "./services/stt/types";
 
@@ -24,12 +26,14 @@ export interface AppDeps {
   ai: AiProviders;
   storage: FileStorage;
   stt: SttProvider;
+  /** Turns text into vectors for meaning-based search. Null = word search only. */
+  embedder?: EmbeddingProvider | null;
   verifyToken: TokenVerifier;
   /** Wakes the background worker when a job is queued. */
   kickWorker?: () => void;
 }
 
-export async function buildApp({ env, db, ai, storage, stt, verifyToken, kickWorker = () => {} }: AppDeps) {
+export async function buildApp({ env, db, ai, storage, stt, verifyToken, embedder = null, kickWorker = () => {} }: AppDeps) {
   const app = Fastify({
     logger: env.NODE_ENV === "test" ? false : { level: "info", redact: ["req.headers.authorization"] },
     bodyLimit: 1024 * 1024,
@@ -51,6 +55,7 @@ export async function buildApp({ env, db, ai, storage, stt, verifyToken, kickWor
   await app.register(filesRoutes({ db, storage, kickWorker }));
   await app.register(contactsRoutes({ db, llm: ai.llm, stt }));
   await app.register(plannerRoutes({ db, llm: ai.llm }));
+  await app.register(chatRoutes({ db, llm: ai.llm, embedder }));
 
   return app;
 }

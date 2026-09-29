@@ -9,6 +9,7 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "try:chat": "tsx --env-file=.env src/scripts/try-chat.ts",
     "try:planner": "tsx --env-file=.env src/scripts/try-planner.ts",
     "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
     "check:ai": "tsx --env-file=.env src/scripts/check-ai.ts",

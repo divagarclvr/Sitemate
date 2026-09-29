@@ -5,6 +5,8 @@ import { Worker } from "./jobs/queue";
 import { supabaseVerifier } from "./plugins/auth";
 import { createAiProviders } from "./services/ai";
 import { NotePipeline } from "./services/notes/pipeline";
+import { GeminiEmbeddings } from "./services/search/embeddings";
+import { indexMissingNotes } from "./services/search/indexer";
 import { supabaseStorage } from "./services/storage";
 import { GroqWhisper } from "./services/stt/groqWhisper";
 
@@ -16,7 +18,8 @@ async function main() {
   const ai = createAiProviders(env);
   const storage = supabaseStorage(env);
   const stt = new GroqWhisper(env.GROQ_API_KEY, env.STT_MODEL);
-  const pipeline = new NotePipeline({ db, env, storage, stt, llm: ai.llm });
+  const embedder = env.GEMINI_API_KEY ? new GeminiEmbeddings(env.GEMINI_API_KEY, env.GEMINI_EMBED_MODEL) : null;
+  const pipeline = new NotePipeline({ db, env, storage, stt, llm: ai.llm, embedder });
 
   let worker: Worker | null = null;
   const app = await buildApp({
@@ -25,6 +28,7 @@ async function main() {
     ai,
     storage,
     stt,
+    embedder,
     verifyToken: supabaseVerifier(env),
     kickWorker: () => worker?.kick(),
   });
@@ -36,6 +40,13 @@ async function main() {
     await db.end({ timeout: 5 });
     process.exit(0);
   };
+  // Notes finished while the free embedding limit was used up get their search index completed later.
+  if (env.WORKER_ENABLED && embedder) {
+    const catchUp = () => void indexMissingNotes(db, embedder, 5).catch((e) => app.log.warn({ err: String(e) }, "search indexing failed"));
+    setTimeout(catchUp, 30_000).unref();
+    setInterval(catchUp, 10 * 60_000).unref();
+  }
+
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 

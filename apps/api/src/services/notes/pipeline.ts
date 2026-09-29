@@ -28,6 +28,8 @@ import type { FileStorage } from "../storage";
 import { cleanAudio, splitAudio, stitchSegments } from "../stt/chunker";
 import type { SttProvider, SttSegment } from "../stt/types";
 import { normaliseFigures } from "./indianNumbers";
+import type { EmbeddingProvider } from "../search/embeddings";
+import { indexNote } from "../search/indexer";
 
 export interface PipelineDeps {
   db: Sql;
@@ -35,6 +37,8 @@ export interface PipelineDeps {
   storage: FileStorage;
   stt: SttProvider;
   llm: LlmProvider;
+  /** When set, finished notes are indexed for meaning-based search. */
+  embedder?: EmbeddingProvider | null;
 }
 
 export interface TranscriptLine {
@@ -317,6 +321,8 @@ export class NotePipeline {
     await this.logLlm(note, "summarise", res.results);
     const structured: StructuredNote = { ...res.data, figures: normaliseFigures(res.data.figures) };
     await this.saveStructured(note, structured, res.results.at(-1)!.model);
+    // Make the note findable by meaning. Never fails the note: a later catch-up pass completes it.
+    if (this.d.embedder) await indexNote(this.d.db, this.d.embedder, note.id).catch(() => undefined);
   }
 
   // ───────────────────────── persistence ─────────────────────────

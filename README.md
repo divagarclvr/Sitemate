@@ -309,6 +309,23 @@ Use **Open** or **Share** on the note to view it or send it again on WhatsApp or
 - Testing the server side without the phone: `npm run try:planner -w @sitemate/api` (uses your real database and AI,
   then removes its test meetings and tasks).
 
+## Phase 6 — chat with your notes, and smarter search
+
+- **Chat tab:** ask in plain words — by typing or tapping 🎤 (English, Tamil, Kannada, Telugu, Malayalam, Hindi or a mix).
+  Examples: *"What did the steel vendor quote?"*, *"What's pending for the Essence project?"*,
+  *"What did we agree with Ramesh?"*. Answers are short, and **the notes an answer is based on are listed under it**
+  (tap one to open it). If the notes don't contain the answer, SiteMate says so instead of guessing.
+- **It can suggest, never do:** ask *"Call Ramesh Electrician"*, *"Add a meeting tomorrow 3 pm"* or *"Add a task to send the BOQ"*
+  and a card appears with **Confirm** / **No thanks**. Nothing is dialled, added or created until you tap Confirm.
+- **History / ＋ New** at the top of the Chat tab: reopen an earlier chat or start a fresh one.
+- **Notes tab search** now finds notes by meaning as well as by words (search "rebar price" and notes that say
+  "TMT rate" show up too). It shows matching notes while the smarter search loads.
+- Behind the scenes each finished note is split into pieces and turned into "meaning numbers" by Google's free embedding
+  model. Notes that were finished before this phase are indexed automatically (`npm run try:chat` does it at once).
+  If Google's free limit is used up, search quietly falls back to word search.
+- Chat uses several free AI calls per question, so it is limited to about 10 questions a minute.
+- Try it on your PC (real notes, then removes its test chat): `npm run try:chat -w @sitemate/api -- "your question"`.
+
 ## Commands reference
 
 | Command | What it does |
@@ -323,6 +340,7 @@ Use **Open** or **Share** on the note to view it or send it again on WhatsApp or
 | `npm run check:storage -w @sitemate/api` | Tests file storage |
 | `npm run try:audio -w @sitemate/api -- "file.m4a" ta` | Tries transcription + note on an audio file |
 | `npm run try:planner -w @sitemate/api` | Tries the calendar and day plan with test data |
+| `npm run try:chat -w @sitemate/api -- "question"` | Indexes your notes and asks the chat a question |
 
 ## Where things are
 

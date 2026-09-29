@@ -9,7 +9,7 @@ import { BigButton } from "@/components/ui";
 import { Body, ErrorBox } from "@/components/ui";
 import { formatDuration } from "@/audio/recording";
 import { ApiRequestError } from "@/lib/api";
-import { useNotes } from "@/lib/queries";
+import { useNotes, useSearch } from "@/lib/queries";
 import { fileIcon, incoming } from "@/offline/incoming";
 import { processUploads, uploadQueue } from "@/offline/uploads";
 import { sizes, useTheme } from "@/theme";
@@ -24,6 +24,7 @@ export default function NotesScreen() {
   const notes = useNotes();
   const pending = useSyncExternalStore(uploadQueue.subscribe, uploadQueue.get);
   const [q, setQ] = useState("");
+  const search = useSearch(q);
 
   // Uploads finishing → refresh the list.
   useEffect(() => {
@@ -42,11 +43,13 @@ export default function NotesScreen() {
     router.push("/share");
   };
 
-  const shown = (notes.data ?? []).filter((n) => {
-    if (!q.trim()) return true;
-    const s = q.toLowerCase();
-    return [n.title, n.summary, n.project_name].some((x) => x?.toLowerCase().includes(s));
-  });
+  // Typing a question or topic → the server finds notes by exact words and by meaning, best first.
+  // Until it answers (or if it can't), notes containing the typed words are shown.
+  const all = notes.data ?? [];
+  const words = q.trim().toLowerCase();
+  const local = all.filter((n) => [n.title, n.summary, n.project_name].some((x) => x?.toLowerCase().includes(words)));
+  const ranked = (search.data ?? []).map((h) => all.find((n) => n.id === h.note_id)).filter((n): n is NoteListItem => !!n);
+  const shown = !words ? all : ranked.length ? ranked : local;
 
   const renderNote = ({ item }: { item: NoteListItem }) => (
     <Pressable
@@ -88,7 +91,7 @@ export default function NotesScreen() {
             <TextInput
               value={q}
               onChangeText={setQ}
-              placeholder="Search notes"
+              placeholder="Search notes — words or meaning"
               placeholderTextColor={t.muted}
               style={[styles.search, { color: t.text, borderColor: t.border, backgroundColor: t.card }]}
             />
@@ -123,7 +126,7 @@ export default function NotesScreen() {
         }
         ListEmptyComponent={
           notes.isLoading ? null : (
-            <Body muted>{q ? "No notes match your search." : "No notes yet. Go to Record to capture your first meeting."}</Body>
+            <Body muted>{q ? (search.isFetching ? "Searching…" : "No notes match your search.") : "No notes yet. Go to Record to capture your first meeting."}</Body>
           )
         }
       />

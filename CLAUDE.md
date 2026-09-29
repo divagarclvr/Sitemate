@@ -642,6 +642,35 @@ Each phase ends with: tests passing (`npm test`), README section "How to run Pha
   Google Calendar / Microsoft sign-in.
 - Live check: `npm run try:planner -w @sitemate/api`.
 
+## 12e. Phase 6 notes (as built)
+
+- **Embeddings:** Google `gemini-embedding-001` (free, multilingual) at 384 dims, via `EmbeddingProvider`
+  (`services/search/embeddings.ts`, env `GEMINI_EMBED_MODEL`), instead of the local e5 model in §2 — a local model would
+  not fit Render's 512 MB. Vectors are L2-normalised and stored in `search_chunks.embedding` (no migration needed).
+- **Indexing** (`services/search/indexer.ts`): after a note reaches `done`, `indexNote` writes a dense "facts" piece
+  (title, date, project, contact, summary, decisions, actions, figures) plus ≤ 40 transcript pieces (~1,400 chars).
+  If embedding fails (quota/busy) the text pieces are saved with `embedding null`; `indexMissingNotes` (server.ts: 30 s after
+  start, then every 10 min) completes them. It never fails a note.
+- **Search** (`services/search/search.ts`): keyword OR full-text (`search_tsv`, 'simple') + title `ilike`, and pgvector cosine over
+  chunks, merged with reciprocal-rank fusion. Falls back to words only when embeddings fail. `GET /v1/search?q=`; the Notes tab
+  uses it.
+- **Chat agent** (`services/chat/{agent,tools,actions}.ts`): provider-neutral JSON protocol (works with the Groq fallback too):
+  each turn the AI returns `{action:"tool",tool,args}` or `{action:"answer",answer,source_note_ids}` (zod `AgentStep`, one retry).
+  Search-first: the question is searched before the first AI call, so most answers take ONE call (~2–6 s on flash-lite; the
+  first version took ~57 s because free Gemini models were overloaded and every step waited). Max 5 lookups, then a forced answer.
+  Tools: search_notes, get_note, search_figures, list_tasks, list_events, find_contact, propose_call, propose_event, propose_task.
+  Sources shown to the user are limited to note ids that tools actually returned.
+- **Confirmation gate:** `propose_*` only insert `pending_actions` (origin `chat`, expire after 1 day). `POST /v1/pending-actions/:id/confirm`
+  executes: task → `tasks`, calendar_event → manual event, call → returns the numbers and the app opens the dialer
+  (`lib/calls.dial`, so the post-call notes prompt still works). `reject` marks it rejected; every confirm is written to `audit_log`.
+- Routes (`routes/chat.ts`): `GET|POST /v1/chat/threads`, `GET|DELETE /v1/chat/threads/:id`,
+  `POST /v1/chat/threads/:id/messages` (plain JSON reply, not streamed — RN fetch streaming is unreliable), `GET /v1/pending-actions`,
+  confirm/reject, `GET /v1/search`. Chat/search are limited to 10 requests/min. Messages in `chat_messages` (user/assistant text only —
+  tool results are not stored), sources in `message_sources`. Every AI call is logged to `usage_events` (purpose `chat`).
+- App: `(tabs)/chat.tsx` (bubbles, source links, action cards, history, suggestions), `audio/speechInput.ts` (mic → `/v1/voice/transcribe`),
+  Notes search via `useSearch`. No new native modules in this phase.
+- Not done: streaming replies, voice answers, chat about a single note from the note screen, chat-created reminders.
+
 ## 13. Conventions
 
 - TypeScript `strict`; zod at every boundary (env, HTTP input, AI output, file parsers).

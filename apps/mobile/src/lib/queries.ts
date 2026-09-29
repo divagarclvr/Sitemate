@@ -7,10 +7,12 @@ import {
   type NoteListItem,
   type PlanKind,
   type ProjectDto,
+  type SearchHitDto,
   type StoredPlan,
   type TodayResponse,
 } from "@sitemate/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { api } from "./api";
 
 export const keys = {
@@ -115,5 +117,21 @@ export function useTodayAction<T = void, R = unknown>(fn: (vars: T) => Promise<R
       void qc.invalidateQueries({ queryKey: todayKey });
       void qc.invalidateQueries({ queryKey: ["tasks"] });
     },
+  });
+}
+
+// ─────────── search ───────────
+/** Finds notes by words AND meaning (server-side). Waits until you pause typing. */
+export function useSearch(text: string) {
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const h = setTimeout(() => setDebounced(text.trim()), 500);
+    return () => clearTimeout(h);
+  }, [text]);
+  return useQuery({
+    queryKey: ["search", debounced],
+    queryFn: () => api<SearchHitDto[]>(`/v1/search?q=${encodeURIComponent(debounced)}`),
+    enabled: debounced.length >= 3,
+    staleTime: 60_000,
   });
 }

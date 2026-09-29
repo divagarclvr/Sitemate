@@ -46,6 +46,7 @@ const EnvSchema = z.object({
   // Comma-separated lists, tried in order when a model is busy or its free limit is used up.
   GEMINI_MODEL: csv("gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite"),
   GEMINI_MODEL_LITE: csv("gemini-3.5-flash-lite,gemini-3.6-flash"),
+  GEMINI_EMBED_MODEL: z.string().default("gemini-embedding-001"),
   AI_FALLBACK_PROVIDER: z.enum(["groq", "none"]).default("groq"),
   GROQ_API_KEY: z.string().default(""),
   GROQ_LLM_MODEL: z.string().default("openai/gpt-oss-120b"),
