@@ -156,6 +156,92 @@ Once you do this, the app works anywhere, not just on your Wi-Fi.
 
 ---
 
+## Phase 2 — recording and meeting notes
+
+Recording with the screen locked needs **your own SiteMate app** (a "development build" APK)
+instead of Expo Go. You build it once, for free, on Expo's servers.
+
+### Step 1. One extra server setting (already done on this PC)
+
+In `apps\api\.env`, add the **Secret key** from Supabase (Project Settings → API Keys →
+Secret keys, starts with `sb_secret_`):
+```
+SUPABASE_SECRET_KEY=sb_secret_...
+```
+Then update the database (creates the job queue and the private audio folder):
+```bash
+npm run db:migrate -w @sitemate/api
+```
+Check that file storage works. It should print ✓:
+```bash
+npm run check:storage -w @sitemate/api
+```
+
+### Step 2. Log in to Expo (once per PC)
+
+```bash
+cd /d "D:\Aratt Alchemy Essence\sitemate\apps\mobile"
+```
+```bash
+npx eas-cli@latest login
+```
+*A browser page opens. Log in there the same way you created your Expo account.*
+
+### Step 3. Build the SiteMate app (only when native features change)
+
+```bash
+npx eas-cli@latest build --profile development --platform android
+```
+*This uploads the project to Expo, which builds an APK in about 10–20 minutes (free plan
+builds can wait in a queue). The first time, answer **Y** when asked to create a
+project or a signing key. At the end it shows a link and a QR code.*
+
+### Step 4. Install it on your phone
+
+1. Open the build link on your phone (or scan the QR code) and tap **Install**.
+2. Android may warn about installing from an unknown source. Allow it for your browser,
+   since this is your own app.
+3. Open **SiteMate** (the new app icon, not Expo Go).
+
+### Step 5. Run it
+
+In one Command Prompt window, start the server:
+```bash
+npm run api
+```
+In a second window, start the app server:
+```bash
+cd /d "D:\Aratt Alchemy Essence\sitemate\apps\mobile"
+```
+```bash
+npx expo start --dev-client
+```
+*In the SiteMate app, choose your PC from the list (or scan the QR code). The phone
+must be on the same Wi-Fi as the PC.*
+
+### Step 6. Test it
+
+1. **Record** tab → choose the project and the main language → tap **● Record**. Confirm that
+   everyone agreed to be recorded.
+2. Talk for a minute, lock the phone for 20 seconds (the recording keeps going, and a
+   notification shows it), unlock it, then tap **Stop and make note**.
+3. The **Notes** tab shows *Saved on phone → Uploading → Transcribing → Summarising → Done*.
+   A 1-hour meeting takes about 1–3 minutes.
+4. Open the note to see the summary, action items (tap to tick), figures (₹ amounts and
+   quantities) and transcript (tap a line to correct it, or tap a speaker to rename).
+5. Try it offline: turn on flight mode, record a short memo, turn flight mode off, and
+   it uploads by itself.
+
+### Check transcription quality for a language (optional)
+
+This runs any audio file through transcription and the AI note without saving anything:
+```bash
+npm run try:audio -w @sitemate/api -- "C:\path\to\recording.m4a" ta
+```
+*Use `auto`, `en`, `ta`, `kn`, `te`, `ml` or `hi` for the language.*
+
+---
+
 ## Commands reference
 
 | Command | What it does |
@@ -165,6 +251,10 @@ Once you do this, the app works anywhere, not just on your Wi-Fi.
 | `npm run mobile` | Starts Expo so your phone can load the app |
 | `npm test` | Runs the automatic checks for the server (they should all pass) |
 | `npm run typecheck` | Checks the code for mistakes without running it |
+| `npm run db:migrate -w @sitemate/api` | Applies new database changes (safe to run any time) |
+| `npm run check:ai -w @sitemate/api` | Tests both AI keys |
+| `npm run check:storage -w @sitemate/api` | Tests file storage |
+| `npm run try:audio -w @sitemate/api -- "file.m4a" ta` | Tries transcription + note on an audio file |
 
 ## Where things are
 

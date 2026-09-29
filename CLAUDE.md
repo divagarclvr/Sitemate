@@ -1,6 +1,6 @@
 # SiteMate — Personal AI Assistant for a Construction Estimator
 
-> Status: **Phase 1 built 2026-09-25** (setup, login, DB schema, API skeleton, AI test). Next: Phase 2.
+> Status: **Phase 1 done and verified on the phone (2026-09-25). Phase 2 built (2026-09-25/29)**: server pipeline verified end to end; phone testing via the EAS development build.
 > Owner: Senior Estimator, Bengaluru (IST, UTC+05:30). Single-user personal app.
 > Meetings mix English with Tamil / Kannada / Telugu / Malayalam / Hindi words.
 > **Budget rule: 100% free tiers.** AI = Google Gemini free tier (swappable to Claude or others later — see §2.2).
@@ -46,7 +46,7 @@ Every phase must keep it up to date.
 | Audio | **expo-audio** (recording, background mode) | Background recording + share-target need a **development build** — Expo Go works only for Phase 1 screens (see §11) |
 | Share target | `expo-share-intent` (Android intent filters + iOS share extension) | Dev build required |
 | Backend | **Node.js 22 + TypeScript + Fastify** | Fastify: fast, built-in schema validation, good plugin set (rate-limit, multipart, helmet) |
-| Job queue | **pg-boss** (queue inside Postgres) | No Redis needed; retries built in |
+| Job queue | **`jobs` table + own worker** (`FOR UPDATE SKIP LOCKED`) | Works through Supabase's transaction pooler; no Redis or extra library |
 | Database | **Supabase Postgres** + `pgvector` + `pg_trgm` | Full-text + fuzzy + semantic search |
 | Auth | **Supabase Auth, email OTP**; backend verifies the Supabase JWT | Plus `ALLOWED_EMAILS` allow-list so nobody else can sign up |
 | Files | **Supabase Storage** private bucket, signed URLs (short expiry) | Encrypted at rest (AES-256). Free tier = 1 GB, so audio is compressed (mono, ~24 kbps ≈ 11 MB/hour) and auto-deleted from the server N days after transcription (default 30); notes and transcripts are kept forever |
@@ -242,7 +242,7 @@ sitemate/
 │   │   ├── src/
 │   │   │   ├── lib/           ← config, supabase client, typed api client, auth context
 │   │   │   ├── audio/         ← recorder, consent sheet, background config
-│   │   │   ├── offline/       ← sqlite schema, upload queue, sync
+│   │   │   ├── offline/       ← db.ts (expo-sqlite), uploads.ts (queue + automatic retries)
 │   │   │   ├── components/    ← big-button UI kit, status chips
 │   │   │   ├── theme/         ← light/dark, high-contrast for sunlight
 │   │   ├── app.json           ← permissions, share intent, background audio (config plugins)
@@ -264,7 +264,7 @@ sitemate/
 │       │   │   ├── export/            ← pdf.ts, docx.ts
 │       │   │   ├── push/              ← expo push
 │       │   │   └── usage/             ← token + free-quota logging
-│       │   ├── jobs/                  ← pg-boss workers + cron schedules
+│       │   ├── jobs/                  ← queue.ts: jobs-table worker + retry rules
 │       │   └── db/                    ← SQL client (postgres.js), queries
 │       ├── test/
 │       │   ├── fixtures/              ← sample pdf/docx/xlsx/pptx/whatsapp/zip/heic
@@ -342,12 +342,13 @@ Indexes: `notes.search_tsv` (GIN), `transcript_segments.text` + `files.extracted
 - `POST /v1/diagnostics/ai` — Phase 1 connection test (tiny prompt to Gemini + Groq, returns model, reply, tokens)
 
 **Notes & recordings**
-- `POST /v1/notes` — create draft note (kind, project_id?, contact_id?, local_id) → returns note + signed upload URL
-- `POST /v1/notes/:id/recordings/complete` — tell server the audio upload finished → enqueue pipeline
+- `POST /v1/notes` — create draft note (kind, local_id, language_hint, project_id?, started_at, size) → `{ note_id, upload: { url } | null }`; same local_id = same note
+- `POST /v1/notes/:id/recording-uploaded` — phone finished the PUT upload → server checks the file exists → enqueue `process_recording`
 - `GET /v1/notes?project_id&contact_id&kind&status&q&cursor` — list
 - `GET /v1/notes/:id` — full note (structured, tasks, figures, sources)
 - `PATCH /v1/notes/:id` — edit title/summary/structured fields/project/participants
-- `GET /v1/notes/:id/transcript` — segments; `PATCH /v1/notes/:id/transcript` — edit segments / speaker names
+- `PATCH /v1/notes/:id/segments/:segmentId` — correct a transcript line; `POST /v1/notes/:id/rename-speaker` `{from,to}`
+- `GET /v1/notes/:id/audio-url` — signed URL to play the recording
 - `POST /v1/notes/:id/resummarise` — re-run AI on (edited) transcript
 - `POST /v1/notes/:id/retry` — retry failed step
 - `DELETE /v1/notes/:id/recording` — delete audio only (keep note)
@@ -366,7 +367,7 @@ Indexes: `notes.search_tsv` (GIN), `transcript_segments.text` + `files.extracted
 - `GET|POST /v1/contacts`, `PATCH|DELETE /v1/contacts/:id`
 - `POST /v1/contacts/import` — batch upsert from phone (only fields you choose)
 - `POST /v1/contacts/resolve` — `{ utterance }` → ranked candidates + a `pending_action` of kind `call`
-- `GET|POST /v1/tasks`, `PATCH /v1/tasks/:id`
+- `PATCH /v1/tasks/:id` (tick off / edit); `GET|POST /v1/tasks` later
 
 **Confirmations**
 - `GET /v1/pending-actions?status=pending`
@@ -482,7 +483,8 @@ TZ_DEFAULT=Asia/Kolkata
 DATABASE_URL=postgresql://...            # Supabase connection string (pooler)
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...            # server only!
-SUPABASE_JWT_SECRET=...
+SUPABASE_JWT_SECRET=                     # leave empty: tokens verified with Supabase JWKS
+SUPABASE_SECRET_KEY=sb_secret_...        # server only! storage uploads/downloads
 STORAGE_BUCKET=sitemate-private
 ALLOWED_EMAILS=you@example.com
 
@@ -501,7 +503,10 @@ GROQ_LLM_MODEL=openai/gpt-oss-120b
 STT_PROVIDER=groq
 GROQ_API_KEY=
 STT_MODEL=whisper-large-v3
-STT_CHUNK_SECONDS=600
+STT_MAX_MB=24                            # bigger files are split with ffmpeg
+STT_CHUNK_SECONDS=1200
+WORKER_ENABLED=true
+WORKER_POLL_MS=5000
 
 # Embeddings (local, no key needed)
 EMBEDDINGS_MODEL=Xenova/multilingual-e5-small
@@ -549,6 +554,22 @@ EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...  # public by design, pro
 Each phase ends with: tests passing (`npm test`), README section "How to run Phase N", and this file updated.
 
 ---
+
+## 12a. Phase 2 notes (as built)
+
+- Phone records mono 16 kHz 32 kbps AAC (`src/audio/recording.ts`, ≈14 MB/h) with `expo-audio`
+  background recording (Android foreground-service notification). File moved to
+  `Paths.document/recordings`, queued in expo-sqlite, uploaded with `File.createUploadTask` (PUT to a
+  Supabase signed upload URL), then `recording-uploaded`; local file deleted after the server confirms.
+- Pipeline (`services/notes/pipeline.ts`): download → ffmpeg split if > STT_MAX_MB → Groq Whisper
+  (`verbose_json`, language hint, construction vocabulary prompt) → AI clean-up in ~8k-char groups
+  (speaker turns, gloss; falls back to raw segments) → StructuredNote → tasks / figures / follow-ups.
+  Resumes from the saved transcript on retry. Every AI/STT call logged in `usage_events`.
+- Worker retry rules (`jobs/queue.ts`): quota → wait 1 h; provider busy → 5 min (note shows
+  `waiting_quota`); user-fixable errors (silent audio, empty memo) fail at once; other errors 3 tries.
+- Dev tools: `npm run try:audio -w @sitemate/api -- <file> <lang>` (quality check, saves nothing),
+  `check:ai`, `check:storage`, `db:migrate`.
+- Expo project `@divamaha/sitemate` (EAS). Development build: `eas build --profile development --platform android`.
 
 ## 13. Conventions
 
