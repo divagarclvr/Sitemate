@@ -22,7 +22,15 @@ export function parseIndianNumber(raw: string): number | null {
   return Math.round(value * multiplier * 10_000) / 10_000;
 }
 
-/** Fills missing `value`s from `raw_text` (the AI sometimes leaves them null). */
-export function normaliseFigures<T extends { value: number | null; raw_text: string }>(figures: T[]): T[] {
-  return figures.map((f) => (f.value == null ? { ...f, value: parseIndianNumber(f.raw_text) } : f));
+const NUMERIC_KINDS = new Set(["amount", "quantity", "rate", "percentage"]);
+
+/**
+ * Fills missing `value`s from `raw_text` (the AI sometimes leaves them null) for money/quantities,
+ * and clears numbers wrongly given to dates ("24-09-2026" is not 24).
+ */
+export function normaliseFigures<T extends { kind?: string; value: number | null; raw_text: string }>(figures: T[]): T[] {
+  return figures.map((f) => {
+    if (f.kind && !NUMERIC_KINDS.has(f.kind)) return f.kind === "date" ? { ...f, value: null } : f;
+    return f.value == null ? { ...f, value: parseIndianNumber(f.raw_text) } : f;
+  });
 }

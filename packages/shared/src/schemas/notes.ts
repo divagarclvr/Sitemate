@@ -45,10 +45,24 @@ export const CreateTextMemoBody = z.object({
 });
 export type CreateTextMemoBody = z.infer<typeof CreateTextMemoBody>;
 
+export const CreateFileBody = z.object({
+  local_id: z.string().min(8).max(64),
+  file_name: z.string().min(1).max(255),
+  mime: z.string().max(120).nullable().optional(),
+  size_bytes: z.number().int().positive().max(100 * 1024 * 1024),
+  project_id: z.uuid().nullable().optional(),
+  /** Attach to an existing meeting/note. */
+  related_note_id: z.uuid().nullable().optional(),
+  /** Used when the file is audio (voice note). */
+  language_hint: LanguageHint.default("auto"),
+});
+export type CreateFileBody = z.infer<typeof CreateFileBody>;
+
 export const UpdateNoteBody = z.object({
   title: z.string().min(1).max(200).optional(),
   summary: z.string().max(5000).optional(),
   project_id: z.uuid().nullable().optional(),
+  related_note_id: z.uuid().nullable().optional(),
 });
 export type UpdateNoteBody = z.infer<typeof UpdateNoteBody>;
 
@@ -81,6 +95,31 @@ export interface CreateRecordingNoteResponse {
   note_id: string;
   /** Null when the audio was already uploaded (retried request). */
   upload: { url: string; content_type: string } | null;
+}
+
+export interface CreateFileResponse {
+  note_id: string;
+  file_id: string;
+  /** Null when the file was already uploaded (retried request). */
+  upload: { url: string; content_type: string } | null;
+}
+
+export interface FileDto {
+  id: string;
+  original_name: string;
+  mime: string | null;
+  size_bytes: number | null;
+  file_kind: string | null;
+  page_count: number | null;
+}
+
+/** A short reference to another note (linked meeting / attached files). */
+export interface NoteRef {
+  id: string;
+  kind: NoteKind;
+  title: string | null;
+  status: NoteStatus;
+  started_at: string | null;
 }
 
 export interface NoteListItem {
@@ -149,6 +188,12 @@ export interface NoteDetail extends NoteListItem {
   tasks: TaskDto[];
   figures: FigureDto[];
   follow_ups: FollowUpDto[];
+  /** Original files behind this note (shared/uploaded). */
+  files: FileDto[];
+  /** The meeting this note is attached to, if any. */
+  related_note: NoteRef | null;
+  /** Files/notes attached to this meeting. */
+  attachments: NoteRef[];
 }
 
 export interface ProjectDto {

@@ -137,13 +137,25 @@ export function notesRoutes({ db, storage, kickWorker }: NotesRouteDeps) {
                n.structured, n.user_edited,
                exists(select 1 from recordings r where r.note_id = n.id and r.deleted_at is null and r.upload_status = 'uploaded') as has_audio
         from notes n left join projects p on p.id = n.project_id where n.id = ${id}`;
-      const [segments, tasks, figures, follow_ups] = await Promise.all([
+      const [segments, tasks, figures, follow_ups, files, related, attachments] = await Promise.all([
         db`select id, idx, speaker_label, text, gloss, start_ms, edited from transcript_segments where note_id = ${id} order by idx`,
         db`select id, title, owner_text, to_char(due_date, 'YYYY-MM-DD') as due_date, priority, status from tasks where note_id = ${id} order by status, due_date nulls last, created_at`,
         db`select id, kind, value::float8 as value, unit, currency, item, vendor_text, reference_no, raw_text from figures where note_id = ${id} order by created_at`,
         db`select id, type, description, suggested_start, status from follow_up_suggestions where note_id = ${id} order by created_at`,
+        db`select id, original_name, mime, size_bytes, file_kind, page_count from files where note_id = ${id} and deleted_at is null and upload_status = 'uploaded' order by created_at`,
+        db`select r.id, r.kind, r.title, r.status, r.started_at from notes n join notes r on r.id = n.related_note_id where n.id = ${id} and r.deleted_at is null`,
+        db`select id, kind, title, status, started_at from notes where related_note_id = ${id} and deleted_at is null order by created_at`,
       ]);
-      return { ...(n as unknown as NoteDetail), segments, tasks, figures, follow_ups } as unknown as NoteDetail;
+      return {
+        ...(n as unknown as NoteDetail),
+        segments,
+        tasks,
+        figures,
+        follow_ups,
+        files,
+        related_note: related[0] ?? null,
+        attachments,
+      } as unknown as NoteDetail;
     });
 
     // ─────────── edits ───────────
@@ -155,6 +167,7 @@ export function notesRoutes({ db, storage, kickWorker }: NotesRouteDeps) {
           title = coalesce(${b.title ?? null}, title),
           summary = coalesce(${b.summary ?? null}, summary),
           project_id = ${b.project_id === undefined ? db`project_id` : b.project_id},
+          related_note_id = ${b.related_note_id === undefined ? db`related_note_id` : b.related_note_id === id ? null : b.related_note_id},
           user_edited = user_edited or ${b.title !== undefined || b.summary !== undefined}
         where id = ${id}`;
       return { ok: true };
@@ -189,7 +202,12 @@ export function notesRoutes({ db, storage, kickWorker }: NotesRouteDeps) {
 
     app.post<{ Params: { id: string } }>("/v1/notes/:id/retry", async (req) => {
       const note = await ownNote(req);
-      const kind: JobKind = note.kind === "memo" && note.transcript_text && !(await hasAudio(db, note.id)) ? "process_text" : "process_recording";
+      const kind: JobKind =
+        note.kind === "file" || note.kind === "chat_export"
+          ? "process_file"
+          : note.kind === "memo" && note.transcript_text && !(await hasAudio(db, note.id))
+            ? "process_text"
+            : "process_recording";
       await db`update notes set status = 'queued', progress_text = 'Trying again…', error_message = null, error_hint = null where id = ${note.id}`;
       await queue(req.user!.id, note.id, kind);
       return { ok: true };
@@ -215,6 +233,7 @@ export function notesRoutes({ db, storage, kickWorker }: NotesRouteDeps) {
     app.delete<{ Params: { id: string } }>("/v1/notes/:id", async (req) => {
       const { id } = await ownNote(req);
       await deleteAudio(db, storage, id);
+      await deleteFiles(db, storage, id);
       await db`update notes set deleted_at = now() where id = ${id}`;
       await db`delete from jobs where note_id = ${id} and status = 'queued'`;
       await db`insert into audit_log (user_id, action, entity, entity_id) values (${req.user!.id}, 'delete_note', 'note', ${id})`;
@@ -248,4 +267,11 @@ async function deleteAudio(db: Sql, storage: FileStorage, noteId: string) {
     select id, storage_path from recordings where note_id = ${noteId} and deleted_at is null`;
   await storage.remove(recs.map((r) => r.storage_path));
   if (recs.length) await db`update recordings set deleted_at = now() where note_id = ${noteId}`;
+}
+
+async function deleteFiles(db: Sql, storage: FileStorage, noteId: string) {
+  const files = await db<{ storage_path: string }[]>`
+    select storage_path from files where note_id = ${noteId} and deleted_at is null`;
+  await storage.remove(files.map((f) => f.storage_path));
+  if (files.length) await db`update files set deleted_at = now() where note_id = ${noteId}`;
 }

@@ -38,3 +38,14 @@ describe("normaliseFigures", () => {
     expect(out.map((f) => f.value)).toEqual([320000, 99]);
   });
 });
+
+describe("normaliseFigures with kinds", () => {
+  it("never turns dates into numbers", () => {
+    const out = normaliseFigures([
+      { kind: "date", value: 24, raw_text: "24-09-2026" },
+      { kind: "date", value: null, raw_text: "2 Oct" },
+      { kind: "amount", value: null, raw_text: "Rs 24,290" },
+    ]);
+    expect(out.map((f) => f.value)).toEqual([null, null, 24290]);
+  });
+});

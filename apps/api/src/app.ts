@@ -7,6 +7,7 @@ import type { Sql } from "./db/client";
 import { registerAuth, type TokenVerifier } from "./plugins/auth";
 import { registerErrorHandler } from "./plugins/errors";
 import { diagnosticsRoutes } from "./routes/diagnostics";
+import { filesRoutes } from "./routes/files";
 import { healthRoutes } from "./routes/health";
 import { meRoutes } from "./routes/me";
 import { notesRoutes } from "./routes/notes";
@@ -43,6 +44,7 @@ export async function buildApp({ env, db, ai, storage, verifyToken, kickWorker =
   await app.register(diagnosticsRoutes(ai));
   await app.register(projectsRoutes(db));
   await app.register(notesRoutes({ db, storage, kickWorker }));
+  await app.register(filesRoutes({ db, storage, kickWorker }));
 
   return app;
 }

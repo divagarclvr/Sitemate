@@ -4,7 +4,7 @@ import { AppError } from "../errors";
 import { ProviderUnavailableError, QuotaExceededError } from "../services/ai/types";
 import type { NotePipeline } from "../services/notes/pipeline";
 
-export type JobKind = "process_recording" | "process_text" | "resummarise";
+export type JobKind = "process_recording" | "process_text" | "resummarise" | "process_file";
 
 interface JobRow {
   id: string;
@@ -96,6 +96,7 @@ export class Worker {
     try {
       if (job.kind === "process_recording") await this.pipeline.processRecording(job.note_id);
       else if (job.kind === "process_text") await this.pipeline.processText(job.note_id);
+      else if (job.kind === "process_file") await this.pipeline.processFile(job.note_id);
       else await this.pipeline.resummarise(job.note_id);
       await this.db`update jobs set status = 'done', last_error = null where id = ${job.id}`;
       this.log.info({ job: job.id }, "job done");

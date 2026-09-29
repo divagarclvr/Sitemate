@@ -10,7 +10,20 @@ import {
   cleanupSystem,
   noteUserPrompt,
 } from "../ai/prompts/note";
-import type { LlmProvider, LlmResult } from "../ai/types";
+import { ProviderUnavailableError, type LlmProvider, type LlmResult } from "../ai/types";
+import {
+  decodeText,
+  detectKind,
+  extractPdf,
+  extractPresentation,
+  extractSpreadsheet,
+  extractWhatsAppZip,
+  extractWord,
+  insertVoiceNotes,
+  KIND_LABEL,
+  type FileKind,
+} from "../extract/documents";
+import { prepareImage, VISION_PROMPT } from "../extract/images";
 import type { FileStorage } from "../storage";
 import { cleanAudio, splitAudio, stitchSegments } from "../stt/chunker";
 import type { SttProvider, SttSegment } from "../stt/types";
@@ -47,6 +60,10 @@ interface NoteRow {
 
 /** Max characters of transcript sent per clean-up call (keeps replies well inside output limits). */
 const CLEANUP_CHARS = 8000;
+/** Longest text sent for summarising (~100k tokens — inside free-tier per-minute limits). */
+const MAX_SUMMARY_CHARS = 350_000;
+/** Gemini accepts inline files up to ~20 MB per request. */
+const MAX_INLINE_BYTES = 18 * 1024 * 1024;
 
 export class NotePipeline {
   constructor(private d: PipelineDeps) {}
@@ -87,10 +104,128 @@ export class NotePipeline {
     await this.summariseAndSave(note, text);
   }
 
+  /** Shared or uploaded file → readable text → structured note. Resumes from saved text on retry. */
+  async processFile(noteId: string) {
+    const { db, storage } = this.d;
+    const note = await this.loadNote(noteId);
+    const [file] = await db<{ id: string; original_name: string; mime: string | null; storage_path: string; file_kind: FileKind | null }[]>`
+      select id, original_name, mime, storage_path, file_kind from files
+      where note_id = ${noteId} and deleted_at is null and upload_status = 'uploaded'
+      order by created_at desc limit 1`;
+    if (!file) {
+      throw new AppError(409, "NO_AUDIO", "The file hasn't finished uploading.", "Keep the app open with internet; it will upload and continue.");
+    }
+    const describe = (kind: FileKind) => `File: ${file.original_name} (${KIND_LABEL[kind]})`;
+
+    if (note.transcript_text?.trim() && file.file_kind) {
+      await this.summariseAndSave(note, note.transcript_text, describe(file.file_kind));
+      return;
+    }
+
+    await this.setStatus(note.id, "extracting", "Reading the file…");
+    const data = await storage.download(file.storage_path);
+    const kind = await detectKind(data, file.original_name, file.mime);
+    await db`update files set file_kind = ${kind} where id = ${file.id}`;
+
+    let text = "";
+    let lines: TranscriptLine[] | null = null;
+    let pageCount: number | null = null;
+    switch (kind) {
+      case "audio":
+        lines = await this.transcribeAudio(note, data, file.original_name);
+        text = linesToText(lines);
+        break;
+      case "image": {
+        const img = await prepareImage(data);
+        text = await this.readWithVision(note, img.mimeType, img.data, "photo");
+        break;
+      }
+      case "pdf": {
+        const r = await extractPdf(data);
+        pageCount = r.pageCount;
+        if (!r.looksScanned) {
+          text = r.text;
+        } else if (data.length <= MAX_INLINE_BYTES) {
+          text = await this.readWithVision(note, "application/pdf", data, "scanned PDF");
+        } else {
+          throw new AppError(413, "SCAN_TOO_LARGE", "This scanned PDF is too large to read (over 18 MB).", "Share fewer pages, or photos of the important pages.");
+        }
+        break;
+      }
+      case "word":
+        text = await extractWord(data);
+        break;
+      case "excel": {
+        const r = extractSpreadsheet(data);
+        text = r.text + (r.truncated ? "\n\n[Some very long sheets were shortened to their first 3,000 rows.]" : "");
+        break;
+      }
+      case "powerpoint":
+        text = await extractPresentation(data);
+        break;
+      case "text":
+        text = decodeText(data);
+        break;
+      case "whatsapp":
+        text = await this.readWhatsApp(note, data, file.original_name);
+        break;
+      case "video":
+        throw new AppError(415, "UNSUPPORTED_FILE", "Videos aren't supported yet.", "Share the audio, or a screenshot of what matters. The original file is saved.");
+      default:
+        throw new AppError(
+          415,
+          "UNSUPPORTED_FILE",
+          `SiteMate can't read this type of file (${file.original_name}).`,
+          "Supported: PDF, Word (.docx), Excel/CSV, PowerPoint (.pptx), photos, audio and WhatsApp chats. The original file is saved.",
+        );
+    }
+
+    if (!text.trim()) {
+      throw new AppError(422, "EMPTY_FILE", "No readable content was found in this file.", "If it's a photo or scan, try a clearer, well-lit image.");
+    }
+    await db`update files set extracted_text = ${text}, page_count = ${pageCount} where id = ${file.id}`;
+    await this.saveTranscript(note, lines ?? textToLines(text));
+    await this.summariseAndSave(note, text, describe(kind));
+  }
+
+  /** Gemini reads a photo or scanned PDF (text, tables, drawings, bills). */
+  private async readWithVision(note: NoteRow, mimeType: string, data: Buffer, what: string): Promise<string> {
+    await this.setStatus(note.id, "extracting", `Reading the ${what}…`);
+    const r = await this.d.llm.generate(
+      [{ role: "user", parts: [{ type: "inline", mimeType, dataBase64: data.toString("base64") }, { type: "text", text: VISION_PROMPT }] }],
+      { tier: "main", maxOutputTokens: 16000, temperature: 0 },
+    );
+    await this.logLlm(note, "vision", [r]);
+    return r.text.trim();
+  }
+
+  /** WhatsApp export: chat text, with voice notes transcribed in place. */
+  private async readWhatsApp(note: NoteRow, data: Buffer, fileName: string): Promise<string> {
+    if (!fileName.toLowerCase().endsWith(".zip") && !(data[0] === 0x50 && data[1] === 0x4b)) return decodeText(data);
+
+    const exp = await extractWhatsAppZip(data);
+    const transcripts = new Map<string, string>();
+    for (const [i, a] of exp.audio.entries()) {
+      await this.setStatus(note.id, "transcribing", `Transcribing voice note ${i + 1} of ${exp.audio.length}…`);
+      try {
+        const lines = await this.transcribeAudio(note, a.data, a.name, { cleanup: false });
+        transcripts.set(a.name, lines.map((l) => l.text).join(" "));
+      } catch (err) {
+        if (err instanceof ProviderUnavailableError) throw err; // wait for quota, then redo
+        transcripts.set(a.name, "(voice note could not be transcribed)");
+      }
+    }
+    let chat = insertVoiceNotes(exp.chat, transcripts);
+    if (exp.otherAttachments.length) {
+      chat += `\n\n[The export also contained ${exp.otherAttachments.length} other attachment(s) (photos/documents) that were not read: ${exp.otherAttachments.slice(0, 20).join(", ")}]`;
+    }
+    return chat;
+  }
+
   // ───────────────────────── steps ─────────────────────────
 
   private async transcribe(note: NoteRow): Promise<TranscriptLine[]> {
-    const { db, storage, stt, env } = this.d;
+    const { db, storage } = this.d;
     const [rec] = await db<{ storage_path: string; mime: string | null }[]>`
       select storage_path, mime from recordings
       where note_id = ${note.id} and deleted_at is null and upload_status = 'uploaded'
@@ -99,9 +234,15 @@ export class NotePipeline {
       throw new AppError(409, "NO_AUDIO", "The recording hasn't finished uploading.", "Keep the app open on Wi-Fi or mobile data; it will upload and continue.");
     }
 
-    await this.setStatus(note.id, "transcribing", "Cleaning up the audio…");
     const original = await storage.download(rec.storage_path);
-    const cleaned = await cleanAudio(original, rec.storage_path.split("/").pop() ?? "audio.m4a");
+    return this.transcribeAudio(note, original, rec.storage_path.split("/").pop() ?? "audio.m4a");
+  }
+
+  /** Any audio (recording, shared voice note, WhatsApp PTT) → cleaned speaker-turn transcript. */
+  private async transcribeAudio(note: NoteRow, original: Buffer, filename: string, opts: { cleanup?: boolean } = {}): Promise<TranscriptLine[]> {
+    const { db, stt, env } = this.d;
+    await this.setStatus(note.id, "transcribing", "Cleaning up the audio…");
+    const cleaned = await cleanAudio(original, filename);
     await this.setStatus(note.id, "transcribing", "Transcribing speech…");
     const chunks = await splitAudio(cleaned.data, cleaned.filename, env.STT_MAX_MB * 1024 * 1024, env.STT_CHUNK_SECONDS);
 
@@ -123,6 +264,9 @@ export class NotePipeline {
     }
     await db`update notes set duration_sec = coalesce(duration_sec, ${totalSec}) where id = ${note.id}`;
 
+    if (opts.cleanup === false) {
+      return raw.map((s) => ({ speaker: null, text: s.text, gloss: null, startMs: s.startMs, endMs: s.endMs }));
+    }
     await this.setStatus(note.id, "summarising", "Cleaning up the transcript…");
     return this.cleanup(note, raw);
   }
@@ -154,12 +298,17 @@ export class NotePipeline {
     return out;
   }
 
-  private async summariseAndSave(note: NoteRow, transcript: string) {
-    await this.setStatus(note.id, "summarising", "Writing your meeting note…");
+  private async summariseAndSave(note: NoteRow, transcript: string, source?: string) {
+    await this.setStatus(note.id, "summarising", note.kind === "meeting" ? "Writing your meeting note…" : "Writing your note…");
+    if (transcript.length > MAX_SUMMARY_CHARS) {
+      transcript =
+        transcript.slice(0, MAX_SUMMARY_CHARS) +
+        `\n\n[NOTE: this content is very long; only the first ${MAX_SUMMARY_CHARS.toLocaleString("en-IN")} characters were analysed. Mention this in open_questions.]`;
+    }
     const res = await generateValidatedJson(
       this.d.llm,
       StructuredNoteSchema,
-      [{ role: "user", parts: [{ type: "text", text: noteUserPrompt({ kind: note.kind, startedAt: note.started_at, durationSec: note.duration_sec, projectName: note.project_name, transcript }) }] }],
+      [{ role: "user", parts: [{ type: "text", text: noteUserPrompt({ kind: note.kind, startedAt: note.started_at, durationSec: note.duration_sec, projectName: note.project_name, source, transcript }) }] }],
       { system: NOTE_SYSTEM, tier: "main", maxOutputTokens: 16000, temperature: 0.2 },
     );
     await this.logLlm(note, "summarise", res.results);
@@ -292,6 +441,15 @@ export class NotePipeline {
 
 export function linesToText(lines: TranscriptLine[]) {
   return lines.map((l) => (l.speaker ? `${l.speaker}: ${l.text}` : l.text)).join("\n");
+}
+
+/** Plain text (documents, chats) → transcript lines of up to ~1,500 characters, split at line breaks. */
+export function textToLines(text: string): TranscriptLine[] {
+  const rows = text.split(/\r?\n/).map((t) => ({ text: t }));
+  return groupByChars(rows, 1500)
+    .map((g) => g.map((r) => r.text).join("\n").trim())
+    .filter(Boolean)
+    .map((t) => ({ speaker: null, text: t, gloss: null, startMs: null, endMs: null }));
 }
 
 export function groupByChars<T extends { text: string }>(items: T[], maxChars: number): T[][] {

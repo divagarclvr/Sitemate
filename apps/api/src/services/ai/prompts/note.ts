@@ -19,6 +19,9 @@ Rules:
 - participants: people who spoke or were named as present; speaker_label = the transcript label (e.g. "Speaker A") when you can match it.
 - languages_detected: ISO codes from en, ta, kn, te, ml, hi that appear in the transcript.
 - language_notes: brief notes on local-language terms used and their meaning, or null.
+- For shared files (quotations, BOQs, bills, drawings, reports, WhatsApp chats), the "Content" is the source:
+  summarise what the document says and asks for; participants = people/companies named in it; for chats,
+  treat each sender as a participant and "Me" as the estimator.
 - title: short and specific, e.g. "Steel rate negotiation – Sri Balaji Steels".`;
 
 export function noteUserPrompt(input: {
@@ -26,6 +29,8 @@ export function noteUserPrompt(input: {
   startedAt: Date | null;
   durationSec: number | null;
   projectName: string | null;
+  /** e.g. "File: BOQ_Tower2.xlsx (Excel spreadsheet)" for shared files. */
+  source?: string;
   transcript: string;
 }) {
   const when = input.startedAt
@@ -37,8 +42,9 @@ export function noteUserPrompt(input: {
     `Recorded: ${when} (India time)`,
     `Duration: ${mins}`,
     `Project: ${input.projectName ?? "not selected"}`,
+    ...(input.source ? [input.source] : []),
     "",
-    "Transcript:",
+    input.source ? "Content:" : "Transcript:",
     input.transcript,
   ].join("\n");
 }
