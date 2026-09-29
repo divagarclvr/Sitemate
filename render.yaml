@@ -6,7 +6,7 @@ services:
     runtime: node
     plan: free
     region: singapore # closest free region to Bengaluru
-    buildCommand: npm ci --include=dev --workspace=@sitemate/api --workspace=@sitemate/shared && npm run build -w @sitemate/api
+    buildCommand: npm ci --include=dev --workspace=@sitemate/api --workspace=@sitemate/shared
     startCommand: npm run start -w @sitemate/api
     healthCheckPath: /health
     envVars:
@@ -30,6 +30,8 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
         sync: false
       - key: ALLOWED_EMAILS
         sync: false

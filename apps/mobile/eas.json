@@ -7,12 +7,24 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "android": { "buildType": "apk" },
-      "env": { "APP_VARIANT": "development" }
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_VARIANT": "development"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_VARIANT": "preview",
+        "EXPO_PUBLIC_API_BASE_URL": "https://sitemate-api.onrender.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://rpkvfeskjllwngtquagb.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_STbxsNCDk1JwRb1jH3uY2Q_bQp5OyZQ"
+      }
     },
     "production": {
       "autoIncrement": true
