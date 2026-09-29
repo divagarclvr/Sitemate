@@ -38,6 +38,7 @@ export const Me = z.object({
     morning_plan_time: z.string(),
     evening_recap_time: z.string(),
     evening_recap_enabled: z.boolean(),
+    reminder_minutes: z.number(),
     audio_retention_days: z.number().nullable(),
     theme: z.enum(["system", "light", "dark", "sunlight"]),
   }),

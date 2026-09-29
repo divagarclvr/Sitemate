@@ -12,6 +12,7 @@ import { filesRoutes } from "./routes/files";
 import { healthRoutes } from "./routes/health";
 import { meRoutes } from "./routes/me";
 import { notesRoutes } from "./routes/notes";
+import { plannerRoutes } from "./routes/planner";
 import { projectsRoutes } from "./routes/projects";
 import type { AiProviders } from "./services/ai";
 import type { FileStorage } from "./services/storage";
@@ -49,6 +50,7 @@ export async function buildApp({ env, db, ai, storage, stt, verifyToken, kickWor
   await app.register(notesRoutes({ db, storage, kickWorker }));
   await app.register(filesRoutes({ db, storage, kickWorker }));
   await app.register(contactsRoutes({ db, llm: ai.llm, stt }));
+  await app.register(plannerRoutes({ db, llm: ai.llm }));
 
   return app;
 }

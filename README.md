@@ -290,6 +290,25 @@ Use **Open** or **Share** on the note to view it or send it again on WhatsApp or
 - **Speakerphone call** on the Record screen is for a call on speaker on *another* phone or laptop nearby.
   Android doesn't allow apps to record a call on the same phone, so for those, add notes right after the call.
 
+## Phase 5 — today's plan, calendar and reminders
+
+- **Today tab:** your meetings, tasks due and overdue, a short **plan for the day** written by the AI, and
+  suggested follow-ups from your notes. Tick a task to finish it; tap **＋ Add meeting** or **＋ Add task**.
+  The plan is written automatically the first time you open the app after 5 AM; the **evening recap** appears after
+  your recap time (default 7 PM). Tap **Refresh plan** to write it again.
+- **Calendar:** More → **Calendar & reminders**. Meetings can be added by hand, and your Outlook meetings are read
+  through Outlook's **"publish a calendar" link** (read-only, free, no company approval). Steps are shown in the app:
+  Outlook on the web → Settings → Calendar → Shared calendars → Publish a calendar → copy the **ICS** link → paste it.
+  Treat that link like a password. SiteMate refreshes it when you open Today (at most every 15 minutes).
+  If your company doesn't allow publishing, keep adding meetings by hand.
+- **Reminders** are set on the phone itself (they work without internet): the morning plan and evening recap at
+  your chosen times, each meeting a few minutes before it starts, and each task on the morning of its due date.
+  They are re-created every time Today refreshes. If they arrive late, in Android settings allow "Alarms & reminders"
+  and set SiteMate's battery use to "Unrestricted".
+- Suggested follow-ups from your notes are **never** created automatically: tap "Add to calendar" or "Make it a task".
+- Testing the server side without the phone: `npm run try:planner -w @sitemate/api` (uses your real database and AI,
+  then removes its test meetings and tasks).
+
 ## Commands reference
 
 | Command | What it does |
@@ -303,6 +322,7 @@ Use **Open** or **Share** on the note to view it or send it again on WhatsApp or
 | `npm run check:ai -w @sitemate/api` | Tests both AI keys |
 | `npm run check:storage -w @sitemate/api` | Tests file storage |
 | `npm run try:audio -w @sitemate/api -- "file.m4a" ta` | Tries transcription + note on an audio file |
+| `npm run try:planner -w @sitemate/api` | Tries the calendar and day plan with test data |
 
 ## Where things are
 

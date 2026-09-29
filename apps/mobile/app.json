@@ -31,7 +31,8 @@
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
-        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.SCHEDULE_EXACT_ALARM"
       ],
       "blockedPermissions": [
         "android.permission.WRITE_CONTACTS"
@@ -74,7 +75,14 @@
         {
           "contactsPermission": "SiteMate reads your contacts so you can call vendors and link notes to people."
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0B5FFF"
+        }
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},

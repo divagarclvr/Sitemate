@@ -13,7 +13,7 @@ export function meRoutes(db: Sql) {
         returning timezone, default_language, transcript_script,
                   to_char(morning_plan_time, 'HH24:MI') as morning_plan_time,
                   to_char(evening_recap_time, 'HH24:MI') as evening_recap_time,
-                  evening_recap_enabled, audio_retention_days, theme`;
+                  evening_recap_enabled, reminder_minutes, audio_retention_days, theme`;
       return { id: user.id, email: user.email, settings: row as unknown as Me["settings"] };
     });
   };

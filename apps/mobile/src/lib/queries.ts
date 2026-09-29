@@ -5,7 +5,10 @@ import {
   type ContactInput,
   type NoteDetail,
   type NoteListItem,
+  type PlanKind,
   type ProjectDto,
+  type StoredPlan,
+  type TodayResponse,
 } from "@sitemate/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
@@ -83,6 +86,34 @@ export function useSaveContact() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["contacts"] });
       void qc.invalidateQueries({ queryKey: ["contact"] });
+    },
+  });
+}
+
+// ─────────── today, calendar, plans ───────────
+export const todayKey = ["today"] as const;
+
+export function useToday() {
+  return useQuery({ queryKey: todayKey, queryFn: () => api<TodayResponse>("/v1/today"), staleTime: 30_000 });
+}
+
+export function useGeneratePlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { kind: PlanKind; force?: boolean }) =>
+      api<StoredPlan>("/v1/plan", { method: "POST", body: JSON.stringify({ kind: v.kind, force: v.force ?? false }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: todayKey }),
+  });
+}
+
+/** Any change that affects Today (tasks, meetings, suggestions, settings): call the API, then refresh Today. */
+export function useTodayAction<T = void, R = unknown>(fn: (vars: T) => Promise<R>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: todayKey });
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 }

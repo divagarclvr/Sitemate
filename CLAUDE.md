@@ -616,6 +616,32 @@ Each phase ends with: tests passing (`npm test`), README section "How to run Pha
   `contacts/index|[id]|edit`, Record screen accepts `contactId/contactName/mode` params.
 - Typed routes list the Contacts list as "/contacts/index"; use `CONTACTS_ROUTE` from lib/calls.
 
+## 12d. Phase 5 notes (as built)
+
+- **No OAuth, no push server (yet).** Company Outlook may block third-party sign-in, so the calendar is read from
+  Outlook's *published calendar (ICS) link*: `calendar_accounts` row with `provider='ics'` and `feed_url` (server-only;
+  the table is revoked from the app). Manual meetings live in `calendar_events_cache` with `source='manual'`,
+  `account_id null`. Migration 0005 also adds `all_day`, `last_synced_at`, `last_error`. Microsoft Graph / Google
+  OAuth (§6) stay as the later upgrade; the `calendar_accounts` token columns are unused for now.
+- API (`routes/planner.ts`): `GET /v1/today` (events, overdue/due tasks, follow-ups, stored plans, calendar status,
+  7-day reminder inputs, settings; refreshes the ICS feed when older than 15 min — no cron needed),
+  `POST /v1/plan {kind: morning|evening, force}`, `PUT|DELETE /v1/calendar/feed` (link is fetched and validated
+  first, https/webcal only, private hosts refused, never echoed back), `POST /v1/calendar/sync`,
+  `GET|POST|PATCH|DELETE /v1/calendar/events` (only manual events editable), `GET|POST /v1/tasks`,
+  `POST /v1/follow-ups/:id/(accept|dismiss)` (meeting with a time → manual event, else → task),
+  `PATCH /v1/settings` (plan times, recap on/off, reminder minutes). `PATCH /v1/tasks/:id` is in notes.ts.
+- Services: `services/time.ts` (Intl-based zone maths, no library), `services/calendar/{ics,sync}.ts` (node-ical:
+  Windows zone names, RRULE expansion, all-day pinned to midnight in the user's zone, cancelled skipped),
+  `services/planner/{today,plan}.ts` (Gemini lite, `DayPlanContent` zod schema, prompt only uses supplied data).
+- Reminders are **local notifications** (`apps/mobile/src/lib/notifications.ts`, expo-notifications): daily morning
+  and evening triggers, one per meeting (start − reminder_minutes), one per task at 09:00 on its due date; all are
+  cancelled and re-created whenever Today refreshes (`RemindersSync` in `_layout.tsx`). Needs a new native build
+  (expo-notifications, datetimepicker, SCHEDULE_EXACT_ALARM). Remote push (FCM credentials) is deliberately not
+  used; add it only if a plan must arrive while the phone has never opened the app that day.
+- Not done in this phase: server-side cron for plans, pending-action confirmations (Phase 6 chat tools),
+  Google Calendar / Microsoft sign-in.
+- Live check: `npm run try:planner -w @sitemate/api`.
+
 ## 13. Conventions
 
 - TypeScript `strict`; zod at every boundary (env, HTTP input, AI output, file parsers).

@@ -1,17 +1,40 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as Notifications from "expo-notifications";
 import { router, Stack } from "expo-router";
 import { ShareIntentProvider, useShareIntentContext } from "expo-share-intent";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, AppState, View } from "react-native";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { startCallNotesPrompt } from "@/lib/calls";
-import { keys } from "@/lib/queries";
+import { rescheduleReminders } from "@/lib/notifications";
+import { keys, todayKey, useToday } from "@/lib/queries";
 import { incoming } from "@/offline/incoming";
 import { setOnUploaded, startUploadTriggers } from "@/offline/uploads";
 import { useTheme } from "@/theme";
 
 const queryClient = new QueryClient();
+
+/** Keeps phone reminders in step with your calendar and tasks: whenever Today refreshes, or the app is opened. */
+function RemindersSync() {
+  const today = useToday();
+  useEffect(() => {
+    if (today.data) void rescheduleReminders(today.data).catch(() => undefined);
+  }, [today.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") void queryClient.invalidateQueries({ queryKey: todayKey });
+    });
+    // Tapping a reminder opens Today.
+    const tap = Notifications.addNotificationResponseReceivedListener(() => router.navigate("/"));
+    return () => {
+      sub.remove();
+      tap.remove();
+    };
+  }, []);
+  return null;
+}
 
 function RootNavigator() {
   const { session, loading } = useAuth();
@@ -51,6 +74,8 @@ function RootNavigator() {
   }
 
   return (
+    <>
+    {session && <RemindersSync />}
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" />
@@ -59,11 +84,14 @@ function RootNavigator() {
         <Stack.Screen name="contacts/index" />
         <Stack.Screen name="contacts/[id]" />
         <Stack.Screen name="contacts/edit" />
+        <Stack.Screen name="calendar/index" />
+        <Stack.Screen name="calendar/event" />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
     </Stack>
+    </>
   );
 }
 
