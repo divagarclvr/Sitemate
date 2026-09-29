@@ -9,10 +9,28 @@ const VOCABULARY_HINT =
   "centering, BBS, M-book, RA bill, WBS, PO, work order, sqft, cum, MT, rmt, nos, lakh, crore, " +
   "GST, slab, column, footing, plinth, plastering, waterproofing, MEP, BOQ, estimate.";
 
-interface VerboseSegment {
+export interface VerboseSegment {
   start: number;
   end: number;
   text: string;
+  avg_logprob?: number;
+  no_speech_prob?: number;
+  compression_ratio?: number;
+}
+
+/**
+ * Whisper invents text over silence or noise ("Tmk.com, Tmk.com…", "Thank you for watching").
+ * Its own confidence scores show which segments to drop. Exported for tests.
+ */
+export function isLikelyHallucination(s: VerboseSegment): boolean {
+  const text = s.text.trim();
+  if (!text || /^[\s.,!?…-]*$/.test(text)) return true;
+  if ((s.no_speech_prob ?? 0) > 0.6 && (s.avg_logprob ?? 0) < -0.7) return true;
+  if ((s.compression_ratio ?? 0) > 2.4) return true; // highly repetitive
+  if ((s.avg_logprob ?? 0) < -1.2) return true; // very unsure
+  // Same short phrase repeated 3+ times ("Tmk.com, Tmk.com, Tmk.com")
+  const parts = text.split(/[,;]\s*|[.!?]\s+/).map((p) => p.trim().toLowerCase()).filter(Boolean);
+  return parts.length >= 3 && new Set(parts).size === 1;
 }
 
 export class GroqWhisper implements SttProvider {
@@ -38,14 +56,14 @@ export class GroqWhisper implements SttProvider {
         temperature: 0,
       })) as unknown as { text: string; language?: string; duration?: number; segments?: VerboseSegment[] };
 
-      const segments = (res.segments ?? []).map((s) => ({
-        startMs: Math.round(s.start * 1000),
-        endMs: Math.round(s.end * 1000),
-        text: s.text.trim(),
-      }));
+      const all = res.segments ?? [];
+      const segments = all
+        .filter((s) => !isLikelyHallucination(s))
+        .map((s) => ({ startMs: Math.round(s.start * 1000), endMs: Math.round(s.end * 1000), text: s.text.trim() }));
       return {
-        text: res.text.trim(),
-        segments: segments.filter((s) => s.text),
+        // Rebuild the text from trusted segments only (res.text still contains the invented lines).
+        text: all.length ? segments.map((s) => s.text).join(" ") : res.text.trim(),
+        segments,
         language: res.language ?? null,
         durationSec: Math.round(res.duration ?? (segments.at(-1)?.endMs ?? 0) / 1000),
         model: this.model,

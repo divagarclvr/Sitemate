@@ -9,7 +9,8 @@ import { AppError } from "../src/errors";
 import { retryPlan } from "../src/jobs/queue";
 import { ProviderUnavailableError, QuotaExceededError } from "../src/services/ai/types";
 import { groupByChars, isoDate, isoTimestamp, linesToText } from "../src/services/notes/pipeline";
-import { splitAudio, stitchSegments } from "../src/services/stt/chunker";
+import { cleanAudio, splitAudio, stitchSegments } from "../src/services/stt/chunker";
+import { isLikelyHallucination } from "../src/services/stt/groqWhisper";
 
 describe("transcript helpers", () => {
   it("groups segments without exceeding the size limit", () => {
@@ -93,4 +94,46 @@ describe("splitAudio", () => {
       await rm(dir, { recursive: true, force: true });
     }
   }, 30_000);
+});
+
+describe("Whisper hallucination filter", () => {
+  it.each([
+    [{ start: 0, end: 5, text: "Tmk.com, Tmk.com, Tmk.com, Tmk.com" }],
+    [{ start: 0, end: 5, text: " . . ." }],
+    [{ start: 0, end: 5, text: "Thank you.", no_speech_prob: 0.9, avg_logprob: -0.9 }],
+    [{ start: 0, end: 5, text: "ok ok ok ok ok ok ok ok", compression_ratio: 3.1 }],
+    [{ start: 0, end: 5, text: "Shri Mataji 248thaza", avg_logprob: -1.5 }],
+  ])("drops %j", (seg) => {
+    expect(isLikelyHallucination(seg)).toBe(true);
+  });
+
+  it("keeps normal speech", () => {
+    expect(
+      isLikelyHallucination({ start: 0, end: 5, text: "Send the revised quotation by tomorrow", avg_logprob: -0.3, no_speech_prob: 0.02, compression_ratio: 1.2 }),
+    ).toBe(false);
+  });
+});
+
+describe("cleanAudio", () => {
+  it("returns audio ffmpeg can read", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sitemate-test-"));
+    try {
+      const file = join(dir, "quiet.m4a");
+      await promisify(execFile)(ffmpegPath as unknown as string, [
+        "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:duration=3",
+        "-af", "volume=0.05", "-ac", "1", "-ar", "16000", "-c:a", "aac", file,
+      ]);
+      const out = await cleanAudio(await readFile(file), "quiet.m4a");
+      expect(out.filename).toBe("clean.m4a");
+      expect(out.data.length).toBeGreaterThan(1000);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("falls back to the original when the input isn't audio", async () => {
+    const junk = Buffer.from("not audio");
+    const out = await cleanAudio(junk, "x.m4a");
+    expect(out.data).toBe(junk);
+  });
 });

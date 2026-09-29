@@ -12,7 +12,7 @@ import {
 } from "../ai/prompts/note";
 import type { LlmProvider, LlmResult } from "../ai/types";
 import type { FileStorage } from "../storage";
-import { splitAudio, stitchSegments } from "../stt/chunker";
+import { cleanAudio, splitAudio, stitchSegments } from "../stt/chunker";
 import type { SttProvider, SttSegment } from "../stt/types";
 import { normaliseFigures } from "./indianNumbers";
 
@@ -99,10 +99,11 @@ export class NotePipeline {
       throw new AppError(409, "NO_AUDIO", "The recording hasn't finished uploading.", "Keep the app open on Wi-Fi or mobile data; it will upload and continue.");
     }
 
+    await this.setStatus(note.id, "transcribing", "Cleaning up the audio…");
+    const original = await storage.download(rec.storage_path);
+    const cleaned = await cleanAudio(original, rec.storage_path.split("/").pop() ?? "audio.m4a");
     await this.setStatus(note.id, "transcribing", "Transcribing speech…");
-    const audio = await storage.download(rec.storage_path);
-    const filename = rec.storage_path.split("/").pop() ?? "audio.m4a";
-    const chunks = await splitAudio(audio, filename, env.STT_MAX_MB * 1024 * 1024, env.STT_CHUNK_SECONDS);
+    const chunks = await splitAudio(cleaned.data, cleaned.filename, env.STT_MAX_MB * 1024 * 1024, env.STT_CHUNK_SECONDS);
 
     const results: { offsetMs: number; segments: SttSegment[] }[] = [];
     const languages = new Set<string>();

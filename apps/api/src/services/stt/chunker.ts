@@ -50,6 +50,31 @@ export async function splitAudio(
   }
 }
 
+/**
+ * Makes speech easier to transcribe: removes rumble and hiss, reduces steady background noise
+ * (generators, fans, traffic) and evens out loudness so distant or quiet speakers are heard.
+ * Output: mono 16 kHz AAC. On any ffmpeg problem, returns the original audio unchanged.
+ */
+export async function cleanAudio(audio: Buffer, filename: string): Promise<{ data: Buffer; filename: string }> {
+  if (!ffmpegPath) return { data: audio, filename };
+  const dir = await mkdtemp(join(tmpdir(), "sitemate-clean-"));
+  try {
+    const input = join(dir, `input${extname(filename) || ".m4a"}`);
+    const output = join(dir, "clean.m4a");
+    await writeFile(input, audio);
+    await run(ffmpegPath as unknown as string, [
+      "-hide_banner", "-loglevel", "error", "-i", input,
+      "-af", "highpass=f=80,lowpass=f=7600,afftdn=nf=-25,loudnorm=I=-18:TP=-2:LRA=11",
+      "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "48k", output,
+    ]);
+    return { data: await readFile(output), filename: "clean.m4a" };
+  } catch {
+    return { data: audio, filename };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 /** Joins per-chunk segments into one timeline. */
 export function stitchSegments(chunks: { offsetMs: number; segments: SttSegment[] }[]): SttSegment[] {
   return chunks.flatMap((c) =>

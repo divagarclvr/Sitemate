@@ -14,7 +14,7 @@ import { createAiProviders } from "../services/ai";
 import { generateValidatedJson } from "../services/ai/json";
 import { CleanedTranscriptSchema, NOTE_SYSTEM, cleanupSystem, noteUserPrompt } from "../services/ai/prompts/note";
 import { normaliseFigures } from "../services/notes/indianNumbers";
-import { splitAudio, stitchSegments } from "../services/stt/chunker";
+import { cleanAudio, splitAudio, stitchSegments } from "../services/stt/chunker";
 import { GroqWhisper } from "../services/stt/groqWhisper";
 
 const [file, lang = "auto"] = process.argv.slice(2);
@@ -29,8 +29,8 @@ const stt = new GroqWhisper(env.GROQ_API_KEY, env.STT_MODEL);
 const language = LanguageHint.parse(lang);
 
 const t0 = Date.now();
-const audio = await readFile(file);
-const chunks = await splitAudio(audio, basename(file), env.STT_MAX_MB * 1024 * 1024, env.STT_CHUNK_SECONDS);
+const audio = await cleanAudio(await readFile(file), basename(file));
+const chunks = await splitAudio(audio.data, audio.filename, env.STT_MAX_MB * 1024 * 1024, env.STT_CHUNK_SECONDS);
 const parts = [];
 for (const c of chunks) {
   const r = await stt.transcribe(c.data, c.filename, language);
