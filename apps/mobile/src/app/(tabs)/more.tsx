@@ -1,6 +1,7 @@
 import type { AiDiagnostics, ProviderCheck } from "@sitemate/shared";
 import { useMutation } from "@tanstack/react-query";
 import { BigButton, Body, Card, ErrorBox, Screen, Title } from "@/components/ui";
+import { hasOwnRecordingService } from "@/audio/foregroundService";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { config } from "@/lib/config";
@@ -52,6 +53,9 @@ export default function MoreScreen() {
         <Body muted>Signed in as</Body>
         <Body>{session?.user.email}</Body>
         <Body muted>Server: {config.apiBaseUrl || "(not set)"}</Body>
+        <Body muted>
+          Screen-off recording: {hasOwnRecordingService ? "✅ available in this app" : "❌ not in this app build — install the latest SiteMate APK"}
+        </Body>
       </Card>
 
       <Title>Connection check</Title>
