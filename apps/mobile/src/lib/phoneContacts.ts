@@ -25,7 +25,7 @@ export async function importPhoneContacts(onProgress?: (done: number) => void): 
       const phones = [...new Set((c.phones ?? []).map((p) => (p.number ?? "").trim()).filter((n) => n.replace(/\D/g, "").length >= 5))];
       const name = (c.fullName ?? "").trim();
       if (!name || phones.length === 0) continue;
-      all.push({ device_contact_id: c.id, name: name.slice(0, 120), company: c.company?.trim() || null, role: c.jobTitle?.trim() || null, phones: phones.slice(0, 10) });
+      all.push({ device_contact_id: c.id, name: name.slice(0, 120), company: c.company?.trim().slice(0, 120) || null, role: c.jobTitle?.trim().slice(0, 120) || null, phones: phones.slice(0, 10) });
     }
     onProgress?.(all.length);
     if (page.length < pageSize) break;

@@ -19,15 +19,22 @@ export type ContactInput = z.infer<typeof ContactInput>;
 
 export const UpdateContactBody = ContactInput.partial();
 
+/** Phone contacts can hold anything — shorten or skip odd values instead of rejecting the whole import. */
+const clip = (max: number) =>
+  z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, max) || null : null), z.string().nullable());
+
 export const ImportContactsBody = z.object({
   contacts: z
     .array(
       z.object({
-        device_contact_id: z.string().min(1).max(100),
-        name: z.string().trim().min(1).max(120),
-        company: z.string().trim().max(120).nullable().optional(),
-        role: z.string().trim().max(120).nullable().optional(),
-        phones: z.array(phone).max(10).default([]),
+        device_contact_id: z.string().min(1).max(200),
+        name: z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, 120) : v), z.string().min(1)),
+        company: clip(120).optional(),
+        role: clip(120).optional(),
+        phones: z.preprocess(
+          (v) => (Array.isArray(v) ? v.filter((p): p is string => typeof p === "string").map((p) => p.trim()).filter((p) => p.length >= 3 && p.length <= 30).slice(0, 10) : []),
+          z.array(z.string()),
+        ),
       }),
     )
     .max(2000),
