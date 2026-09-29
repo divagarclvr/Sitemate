@@ -34,6 +34,7 @@ export default function RecordScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [memoText, setMemoText] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
   const startedAt = useRef<Date | null>(null);
@@ -53,29 +54,40 @@ export default function RecordScreen() {
 
   const askToStart = async () => {
     setError(null);
+    setWarning(null);
     const mic = await requestRecordingPermissionsAsync();
     if (!mic.granted) {
       setError({ message: "Microphone permission is off.", hint: "Open phone Settings → Apps → SiteMate → Permissions → Microphone → Allow." });
       return;
     }
-    // Android shows a "Recording" notification while the screen is locked; it needs this permission.
-    if (Platform.OS === "android") await requestNotificationPermissionsAsync().catch(() => undefined);
     if (mode === "meeting") setConsentOpen(true);
     else void start();
   };
 
   const start = async () => {
     setConsentOpen(false);
+    // Recording with the screen locked runs as an Android "foreground service", which must show a
+    // notification — so it needs the notification permission. Without it, record in the foreground only.
+    let background = true;
+    if (Platform.OS === "android") {
+      const n = await requestNotificationPermissionsAsync().catch(() => null);
+      background = !!n?.granted;
+    }
     try {
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: true });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: background });
       await recorder.prepareToRecordAsync();
-      recorder.record();
+      await recordWhenServiceReady(recorder);
       startedAt.current = new Date();
       localId.current = newLocalId();
       setElapsed(0);
       setPhase("recording");
+      if (!background) {
+        setWarning("Notifications are off, so recording pauses if you lock the screen or leave the app. Keep SiteMate open — or allow notifications in phone Settings → Apps → SiteMate.");
+      }
     } catch (e) {
-      setError({ message: "Couldn't start recording.", hint: `${String(e)}. Close other apps using the microphone and try again.` });
+      console.warn("[record] start failed:", errorText(e)); // appears in the laptop's Expo log
+      await recorder.stop().catch(() => undefined); // release the half-started recorder so Retry works
+      setError({ message: "Couldn't start recording.", hint: `${errorText(e)}. Close other apps using the microphone (calls, WhatsApp voice) and try again.` });
     }
   };
 
@@ -161,7 +173,7 @@ export default function RecordScreen() {
           <View style={[styles.meter, { backgroundColor: t.border }]}>
             <View style={{ width: `${Math.round(level * 100)}%`, height: "100%", backgroundColor: phase === "recording" ? t.success : t.muted }} />
           </View>
-          <Body muted>Keeps recording when the screen is locked.</Body>
+          {warning ? <Body>{warning}</Body> : <Body muted>Keeps recording when the screen is locked.</Body>}
         </View>
         <View style={{ gap: 12 }}>
           <BigButton label={phase === "paused" ? "Resume" : "Pause"} variant="secondary" onPress={togglePause} disabled={phase === "saving"} />
@@ -220,6 +232,31 @@ export default function RecordScreen() {
       <ConsentSheet visible={consentOpen} onAccept={start} onCancel={() => setConsentOpen(false)} />
     </Screen>
   );
+}
+
+type Recorder = ReturnType<typeof useAudioRecorder>;
+
+/**
+ * On Android the background-recording service connects a moment after prepareToRecordAsync();
+ * record() called too early fails with "service connection is not bound". Retry briefly.
+ */
+async function recordWhenServiceReady(recorder: Recorder) {
+  let last: unknown;
+  for (let i = 0; i < 25; i++) {
+    try {
+      recorder.record();
+      return;
+    } catch (e) {
+      last = e;
+      if (!/not bound/i.test(errorText(e))) throw e;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+  throw last;
+}
+
+function errorText(e: unknown) {
+  return e instanceof Error ? e.message : String(e);
 }
 
 const styles = StyleSheet.create({
