@@ -570,6 +570,17 @@ Each phase ends with: tests passing (`npm test`), README section "How to run Pha
 - Dev tools: `npm run try:audio -w @sitemate/api -- <file> <lang>` (quality check, saves nothing),
   `check:ai`, `check:storage`, `db:migrate`.
 - Expo project `@divamaha/sitemate` (EAS). Development build: `eas build --profile development --platform android`.
+- **Screen-off recording (Android):** expo-audio's bindService-based recording service is refused on
+  Vivo/iQOO (Android 16: "Failed to start the recording service"). Local Expo module
+  `apps/mobile/modules/sitemate-recorder` starts our own `microphone` foreground service with
+  `startForegroundService` + partial wake lock. Flow (`record.tsx`): record in foreground with
+  `allowsBackgroundRecording:false` → start our service → set `allowsBackgroundRecording:true` so
+  expo-audio doesn't pause in background (resume = flip false → record() → flip true). Falls back to
+  screen-on (keep-awake) recording with the reason shown. Verified on iQOO Neo 7 Pro 2026-09-29.
+  Root `.gitignore` must only ignore `/apps/mobile/android|ios`, or EAS drops the module's android folder.
+- **Transcription quality:** server cleans audio first (ffmpeg highpass/lowpass/afftdn/loudnorm) and
+  drops Whisper segments it marks unreliable (`isLikelyHallucination`). Gemini (lite) transcribed a
+  quiet Tamil+English sample better than Whisper — candidate STT provider if Whisper stays weak.
 
 ## 13. Conventions
 
