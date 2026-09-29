@@ -6,6 +6,7 @@ import {
   setAudioModeAsync,
   useAudioRecorder,
 } from "expo-audio";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
@@ -17,6 +18,8 @@ import { newLocalId } from "@/lib/ids";
 import { keys } from "@/lib/queries";
 import { queueRecording } from "@/offline/uploads";
 import { sizes, useTheme } from "@/theme";
+
+const KEEP_AWAKE_TAG = "recording";
 
 type Mode = "meeting" | "voice_memo" | "text_memo";
 type Phase = "idle" | "recording" | "paused" | "saving";
@@ -38,6 +41,7 @@ export default function RecordScreen() {
   const [memoText, setMemoText] = useState("");
   const [memoSaving, setMemoSaving] = useState(false);
   const startedAt = useRef<Date | null>(null);
+  const blockedByPhone = useRef(false);
   const localId = useRef<string>("");
 
   // Timer + sound level while recording.
@@ -73,16 +77,35 @@ export default function RecordScreen() {
       const n = await requestNotificationPermissionsAsync().catch(() => null);
       background = !!n?.granted;
     }
-    try {
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: background });
+    const begin = async (withBackground: boolean) => {
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: withBackground });
       await recorder.prepareToRecordAsync();
       await recordWhenServiceReady(recorder);
+    };
+    try {
+      try {
+        await begin(background);
+      } catch (e) {
+        // Some phones (often Xiaomi/Vivo/Oppo/Realme) refuse the background recording service.
+        // Record anyway in the foreground and keep the screen on so it isn't interrupted.
+        if (!background || !/recording service/i.test(errorText(e))) throw e;
+        console.warn("[record] background service refused, recording in foreground:", errorText(e));
+        await recorder.stop().catch(() => undefined);
+        background = false;
+        await begin(false);
+        blockedByPhone.current = true;
+      }
+      if (!background) await activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => undefined);
       startedAt.current = new Date();
       localId.current = newLocalId();
       setElapsed(0);
       setPhase("recording");
       if (!background) {
-        setWarning("Notifications are off, so recording pauses if you lock the screen or leave the app. Keep SiteMate open — or allow notifications in phone Settings → Apps → SiteMate.");
+        setWarning(
+          blockedByPhone.current
+            ? "Your phone blocked recording with the screen locked, so the screen will stay on. Keep SiteMate open (you can turn brightness down). To fix: Settings → Apps → SiteMate → Battery → No restrictions / Allow background activity."
+            : "Notifications are off, so the screen will stay on while recording. Keep SiteMate open — or allow notifications in Settings → Apps → SiteMate.",
+        );
       }
     } catch (e) {
       console.warn("[record] start failed:", errorText(e)); // appears in the laptop's Expo log
@@ -107,6 +130,7 @@ export default function RecordScreen() {
       const durationMs = recorder.getStatus().durationMillis;
       await recorder.stop();
       await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false });
+      void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
       if (!recorder.uri) throw new Error("no audio file was produced");
       await queueRecording({
         localId: localId.current,
@@ -135,6 +159,7 @@ export default function RecordScreen() {
         onPress: async () => {
           await recorder.stop().catch(() => undefined);
           await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false });
+          void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
           setPhase("idle");
           setElapsed(0);
         },
